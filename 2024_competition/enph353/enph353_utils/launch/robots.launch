@@ -26,9 +26,29 @@
 -->
 
 <!-- Launch cam data -->
-	<group ns="B1">
+	<!-- <group ns="B1">
 		<param name="tf_prefix" value="B1_tf" />
 		<include file="$(find camera_data_collector)/launch/cam_data.launch">
+			<arg name="init_pose" value="-x 5.5 -y 2.5 -z 0.2 -R 0.0 -P 0.0 -Y -1.57" />
+			<arg name="robot_name"  value="B1" />
+		</include>
+	</group> -->
+
+<!-- Launch thruster test -->
+	<!-- <group ns="B1">
+		<param name="tf_prefix" value="B1_tf" />
+		<include file="$(find flight_test)/launch/flight_test.launch">
+			<arg name="init_pose" value="-x 5.5 -y 2.5 -z 0.2 -R 0.0 -P 0.0 -Y -1.57" />
+			<arg name="robot_name"  value="B1" />
+		</include>
+	</group>
+
+</launch> -->
+
+<!-- Launch quadcopter -->
+	<group ns="B1">
+		<param name="tf_prefix" value="B1_tf" />
+		<include file="$(find drone_internals)/launch/drone_launch.launch">
 			<arg name="init_pose" value="-x 5.5 -y 2.5 -z 0.2 -R 0.0 -P 0.0 -Y -1.57" />
 			<arg name="robot_name"  value="B1" />
 		</include>

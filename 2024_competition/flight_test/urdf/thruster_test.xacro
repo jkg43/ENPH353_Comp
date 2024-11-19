@@ -5,9 +5,37 @@
   <xacro:property name="camera_width" value="0.02"/>
   <xacro:property name="camera_length" value="0.02"/>
   <xacro:property name="camera_height" value="0.01"/>
-  <xacro:property name="camera_mass" value="0.01"/>
+  <xacro:property name="camera_mass" value="0.2"/>
+  <xacro:property name="body_width" value="0.1"/>
+  <xacro:property name="body_length" value="0.1"/>
+  <xacro:property name="body_height" value="0.05"/>
+  <xacro:property name="body_mass" value="0.5"/>
 
-   <xacro:include filename="$(find camera_data_collector)/urdf/macros.xacro"/>
+  <xacro:include filename="$(find flight_test)/urdf/macros.xacro"/>
+
+
+
+  <link name='body'>
+    <xacro:box_inertial name="body" m="${body_mass}" x="${body_length}" y="${body_width}" z="${body_height}"/>
+    <collision name='body_collision'>
+      <geometry>
+        <box size="${body_length} ${body_width} ${body_height}"/>
+      </geometry>
+    </collision>
+    <visual name='body_visual'>
+      <origin xyz="0 0 0" rpy=" 0 0 0"/>
+      <geometry>
+        <box size="${body_length} ${body_width} ${body_height}"/>
+      </geometry>
+      <material name="Cyan">
+        <color rgba="0 1.0 1.0 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <gazebo reference="body">
+    <material>Gazebo/Orange</material>
+  </gazebo>
 
 
   <link name='camera_link'>
@@ -25,6 +53,11 @@
     </visual>
   </link>
 
+  <joint name="camera_joint" type="fixed">
+    <parent link="body"/>
+    <child link="camera_link"/>
+    <origin xyz="${body_length/2} 0 ${body_height/2+camera_height/2}"/>
+  </joint>
 
 
 
@@ -67,6 +100,25 @@
       </plugin>
     </sensor>
   </gazebo>
+
+
+
+  <!-- Thruster Plugin -->
+  <gazebo reference = "body">
+    <plugin name="thruster_force_plugin" filename="libgazebo_ros_force.so">
+      <robotNamespace></robotNamespace>
+      <bodyName>body</bodyName>
+      <topicName>/thruster_force</topicName> 
+    </plugin>
+  </gazebo>
+
+
+
+
+
+
+
+
 
 
 </robot>
