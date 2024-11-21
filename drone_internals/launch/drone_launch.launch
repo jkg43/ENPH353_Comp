@@ -9,6 +9,7 @@
         args="$(arg init_pose) -urdf -model $(arg robot_name) -param robot_description" respawn="false" output="screen" />
 
 
-  <include file="$(find drone_controller)/launch/drone_controller.launch"/>
+  <!-- <include file="$(find drone_controller)/launch/drone_controller.launch"/> -->
+  <include file="$(find drone_controller)/launch/drone_gui.launch"/>
 
 </launch>

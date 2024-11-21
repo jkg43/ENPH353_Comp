@@ -1,0 +1,16 @@
+22:50:01.509: Clue SIZE: HERD
+22:50:01.510: Clue VICTIM: ZEBRAS
+22:50:01.511: Clue CRIME: FAILED PRANK
+22:50:01.512: Clue TIME: APRIL 1
+22:50:01.513: Clue PLACE: QUANT REALM
+22:50:01.513: Clue MOTIVE: WANT TO PLAY
+22:50:01.514: Clue WEAPON: FEATHER
+22:50:01.515: Clue BANDIT: GIGGLING GAL
+22:50:07.516: Message received: Team6,password,0,NA
+22:50:07.517: Timer started.
+22:50:09.527: Message received: Team6,password,-1,NA
+22:50:09.528: Timer stopped: 2.00 sec sim time (real time: 1sec).
+22:51:36.913: Message received: Team6,password,0,NA
+22:51:36.915: Timer started.
+22:51:38.916: Message received: Team6,password,-1,NA
+22:51:38.917: Timer stopped: 2.00 sec sim time (real time: 2sec).

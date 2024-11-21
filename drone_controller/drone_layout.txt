@@ -1,0 +1,47 @@
+
+
+P1  0   0  P4
+     \^/
+      0
+     / \
+P2  0   0  P3
+
+
+    ^ forward camera/direction  
+
+
+
+notes: 
+
+seems to move forward well with
+speed = 44
+back = -0.5
+
+fwd slower
+s = 44.9
+b = -1.04
+
+fwd higher
+45
+-1.04
+
+
+with added camera:
+45.9  -1.015
+
+
+-need to switch from using ros Rate to using gazebo /clock
+
+
+
+for time trials:
+run as normal initially
+to start: rostopic pub -1 /start_drone std_msgs/Float32 -- 5
+
+to show gui, change comments in drone_launch.launch
+
+
+31, 23
+
+
+delta -0.01 seems to work decently

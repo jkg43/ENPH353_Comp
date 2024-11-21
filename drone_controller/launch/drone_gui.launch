@@ -1,0 +1,5 @@
+<launch>
+
+  <node pkg="drone_controller" type="drone_control_gui.py" name="drone_gui" output="screen" />
+
+</launch>
