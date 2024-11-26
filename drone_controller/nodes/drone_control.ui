@@ -219,6 +219,19 @@
      <string>Set Delta</string>
     </property>
    </widget>
+   <widget class="QLabel" name="angle_label">
+    <property name="geometry">
+     <rect>
+      <x>900</x>
+      <y>490</y>
+      <width>201</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Pitch: </string>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

@@ -2,6 +2,7 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from python_qt_binding import loadUi
+import traceback
 
 import cv2 as cv
 import sys
@@ -58,6 +59,8 @@ class Control_Gui(QtWidgets.QMainWindow):
     def update_center_label(self,data):
         self.center_label.setText(f"X: {data[0]}, Y: {data[1]}")
         self.delta_label.setText(f"DX: {data[2]}, DY: {data[3]}")
+        pitch_deg = -0.356 * data[3]
+        self.angle_label.setText(f"Pitch: {pitch_deg:.2f}°")
 
     def SLOT_speed_button(self):
         new_speed = self.motor_speed_input.value()
@@ -82,7 +85,7 @@ class ROSWorker(QtCore.QThread):
     image2_ready = QtCore.pyqtSignal(QtGui.QImage)
     center_data_signal = QtCore.pyqtSignal(list)
 
-    center_target = [31,23]
+    center_target = [64,64]
     center_delta = [0,0]
 
     pixel_delta = 0
@@ -118,15 +121,75 @@ class ROSWorker(QtCore.QThread):
             # Convert the ROS image message to an OpenCV image (cv::Mat)
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
             
+
+            #detect and mark lines
+
+            lowerH = 100
+            upperH = 255
+            lowerS = 0
+            upperS = 255
+            lowerV = 150
+            upperV = 255
+
+            lower_hsv = np.array([lowerH,lowerS,lowerV])
+            upper_hsv = np.array([upperH,upperS,upperV])
+
+            hsv = cv.cvtColor(cv_image, cv.COLOR_RGB2HSV)
+
+            mask = cv.inRange(hsv, lower_hsv, upper_hsv)
+            edges = cv.Canny(mask,100,200)
+
+            lines = cv.HoughLinesP(edges,1,np.pi/180,100,minLineLength=100,maxLineGap=100)
+
+            delta = 1
+            adjusted_lines = []
+
+
+            # if there are several colinear lines, pick the longest one
+            if lines is not None:
+                for line in lines:
+                    x1,y1,x2,y2 = line[0]
+                    theta = np.arctan2(y2-y1,x2-x1) * 180/np.pi
+                    length = np.sqrt(((x2-x1)**2+(y2-y1)**2))
+
+                    in_list = False
+
+                    for i in range(len(adjusted_lines)):
+                        _,_,_,_,t,l = adjusted_lines[i]
+                        if np.abs(t-theta) < delta:
+                            # print(f"t: {t}, theta: {theta}")
+                            in_list = True
+                            if length > l:
+                                adjusted_lines[i] = [x1,y1,x2,y2,theta,length]
+
+                    if not in_list:
+                        adjusted_lines.append([x1,y1,x2,y2,theta,length])
+
+            for line in adjusted_lines:
+                x1,y1,x2,y2,theta,length = line
+                cv.line(cv_image,(x1,y1),(x2,y2),(255,0,0),4)
+                cv.circle(cv_image,(x1,y1),4,(255,0,255),2)
+                cv.circle(cv_image,(x2,y2),4,(0,255,255),2)
+
+            # for line in lines:
+            #     x1,y1,x2,y2 = line[0]
+            #     cv.line(cv_image,(x1,y1),(x2,y2),(255,0,0),4)
+            #     cv.circle(cv_image,(x1,y1),4,(255,0,255),2)
+            #     cv.circle(cv_image,(x2,y2),4,(0,255,255),2)
+            
+            # print(f"{len(lines)}, {len(adjusted_lines)}")
+
+
+            img_final = cv_image
             # Convert the OpenCV image to QImage (which can be displayed in Qt)
-            height, width, channel = cv_image.shape
+            height, width, channel = img_final.shape
             bytes_per_line = 3 * width
-            q_image = QtGui.QImage(cv_image.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+            q_image = QtGui.QImage(img_final.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
             
             # Emit signal with QImage
             self.image1_ready.emit(q_image)
         except Exception as e:
-            rospy.logerr(f"Failed to convert image: {e}")
+            print(traceback.format_exc())
 
     def cam2_callback(self, msg):
         try:
@@ -150,7 +213,7 @@ class ROSWorker(QtCore.QThread):
 
             mask = cv.inRange(hsv, lower_hsv, upper_hsv)
 
-            w = 64
+            w = 128
 
             col_avg = 0
             col_num = 0
@@ -182,7 +245,7 @@ class ROSWorker(QtCore.QThread):
 
 
             if row_max != 0 or col_max != 0:
-                cv.circle(mask_rgb,(row_max,col_max),5,(255,0,0),2)
+                cv.circle(mask_rgb,(row_max,col_max),10,(255,0,0),2)
 
 
             cv.circle(mask_rgb,self.center_target,1,(255,0,255),2)
@@ -190,9 +253,9 @@ class ROSWorker(QtCore.QThread):
             self.center_delta = [row_max - self.center_target[0],col_max - self.center_target[1]]
 
             self.center_data_signal.emit([row_max,col_max,self.center_delta[0],self.center_delta[1]])
-
-
             # print(f"Center: {col_max}, {row_max}")
+
+            
 
             img_final = mask_rgb
             # Convert the OpenCV image to QImage (which can be displayed in Qt)
@@ -203,7 +266,7 @@ class ROSWorker(QtCore.QThread):
             # Emit signal with QImage
             self.image2_ready.emit(q_image)
         except Exception as e:
-            rospy.logerr(f"Failed to convert image: {e}")
+            print(traceback.format_exc())
 
     def send_new_speed(self, data):
         self.speeds = data

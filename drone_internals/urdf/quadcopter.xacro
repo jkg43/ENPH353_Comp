@@ -21,6 +21,7 @@
   <xacro:property name="camera_length" value="0.02"/>
   <xacro:property name="camera_height" value="0.01"/>
   <xacro:property name="camera_mass" value="0.01"/>
+  <xacro:property name="camera_fov" value="90"/>
 
 
   <xacro:macro name="cylinder_inertial" params="radius height mass *origin">
@@ -206,7 +207,7 @@
   <joint name="camera2_joint" type="fixed">
     <parent link="frame"/>
     <child link="camera2_link"/>
-    <origin xyz="0 0 ${frame_height/2}" rpy="0 -1.570796327 0"/>
+    <origin xyz="0 0 ${frame_height/2}" rpy="0 -1.8 0"/>
   </joint>
 
   <!-- camera plugin -->
@@ -214,7 +215,7 @@
     <sensor type="camera" name="camera1">
       <update_rate>30.0</update_rate>
       <camera name="head">
-        <horizontal_fov>1.3962634</horizontal_fov>
+        <horizontal_fov>1.57079632679</horizontal_fov>
         <image>
           <width>800</width>
           <height>400</height>
@@ -255,10 +256,10 @@
     <sensor type="camera" name="camera2">
       <update_rate>30.0</update_rate>
       <camera name="head">
-        <horizontal_fov>1.3962634</horizontal_fov>
+        <horizontal_fov>0.78539816339</horizontal_fov>
         <image>
-          <width>64</width>
-          <height>64</height>
+          <width>128</width>
+          <height>128</height>
           <format>R8G8B8</format>
         </image>
         <clip>
