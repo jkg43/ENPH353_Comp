@@ -19,8 +19,8 @@
      <rect>
       <x>20</x>
       <y>40</y>
-      <width>800</width>
-      <height>400</height>
+      <width>400</width>
+      <height>200</height>
      </rect>
     </property>
     <property name="text">
@@ -230,6 +230,123 @@
     </property>
     <property name="text">
      <string>Pitch: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="cam_display_adjusted">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>250</y>
+      <width>400</width>
+      <height>200</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="intersection_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>500</y>
+      <width>321</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Intersection: X: . Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="pitch_offset_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>530</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Offset: X: , Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="adjusted_intersection_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>560</y>
+      <width>271</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Adjusted Intersection: X: , Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="line_angle_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>590</y>
+      <width>151</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Angle: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="theta_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>620</y>
+      <width>131</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Theta:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="phi_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>640</y>
+      <width>131</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Phi: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="dir_label">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>660</y>
+      <width>311</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Dir: X: , Y: , Z: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="clue_cam">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>40</y>
+      <width>400</width>
+      <height>200</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
     </property>
    </widget>
   </widget>

@@ -45,3 +45,16 @@ to show gui, change comments in drone_launch.launch
 
 
 delta -0.01 seems to work decently
+
+
+Walls:
+
+5.5 x 0.5
+
+north wall 6 0 0.25 
+south wall -6 0 0.25 
+east wall 0 -2.75 0.25 
+west wall 0 2.75 0.25
+
+
+corner of north wall and east wall: 6 -2.75 0.5

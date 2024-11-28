@@ -38,7 +38,10 @@ class Control_Gui(QtWidgets.QMainWindow):
             self.ros_worker = ROSWorker()
             self.ros_worker.image1_ready.connect(self.update_image1)  # Connect signal to update slot
             self.ros_worker.image2_ready.connect(self.update_image2)
+            self.ros_worker.image3_ready.connect(self.update_image3)
+            self.ros_worker.clue_img_ready.connect(self.update_clue_img)
             self.ros_worker.center_data_signal.connect(self.update_center_label)
+            self.ros_worker.detection_data_signal.connect(self.update_detection_label)
             self.ros_worker.start()
 
             self.send_velocity_signal.connect(self.ros_worker.send_new_speed)
@@ -56,11 +59,28 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.cam_display2.setPixmap(QtGui.QPixmap.fromImage(q_image))
         self.cam_display2.setScaledContents(True)
 
+    def update_image3(self, q_image):
+        self.cam_display_adjusted.setPixmap(QtGui.QPixmap.fromImage(q_image))
+        self.cam_display_adjusted.setScaledContents(True)
+
+    def update_clue_img(self,q_image):
+        self.clue_cam.setPixmap(QtGui.QPixmap.fromImage(q_image))
+        self.clue_cam.setScaledContents(True)
+
     def update_center_label(self,data):
         self.center_label.setText(f"X: {data[0]}, Y: {data[1]}")
         self.delta_label.setText(f"DX: {data[2]}, DY: {data[3]}")
         pitch_deg = -0.356 * data[3]
         self.angle_label.setText(f"Pitch: {pitch_deg:.2f}°")
+
+    def update_detection_label(self,data):
+        self.intersection_label.setText(f"Intersection: X: {data[0]}, Y: {data[1]}")
+        self.pitch_offset_label.setText(f"Offset: X: {data[2]}, Y: {data[3]}")
+        self.adjusted_intersection_label.setText(f"Adjusted Intersection: X: {data[0]+data[2]}, Y: {data[1]+data[3]}")
+        self.line_angle_label.setText(f"Angle: {data[4]:.2f}")
+        self.theta_label.setText(f"Theta: {data[5]*180/np.pi:.3f}")
+        self.phi_label.setText(f"Phi: {data[6]*180/np.pi:.3f}")
+        self.dir_label.setText(f"Dir: X: {data[7]:.3f}, Y: {data[8]:.3f}, Z: {data[9]:.3f}")
 
     def SLOT_speed_button(self):
         new_speed = self.motor_speed_input.value()
@@ -83,12 +103,17 @@ class Control_Gui(QtWidgets.QMainWindow):
 class ROSWorker(QtCore.QThread):
     image1_ready = QtCore.pyqtSignal(QtGui.QImage)
     image2_ready = QtCore.pyqtSignal(QtGui.QImage)
+    image3_ready = QtCore.pyqtSignal(QtGui.QImage)
+    clue_img_ready = QtCore.pyqtSignal(QtGui.QImage)
     center_data_signal = QtCore.pyqtSignal(list)
+    detection_data_signal = QtCore.pyqtSignal(list)
 
     center_target = [64,64]
     center_delta = [0,0]
 
     pixel_delta = 0
+
+    pitch_deg = 0.0
 
 
     def __init__(self):
@@ -116,11 +141,21 @@ class ROSWorker(QtCore.QThread):
             # rospy.loginfo(f"PUBLISHING SPEED {self.speeds}")
             rate.sleep()
 
+
+    # do all clue detection here
+    def clue_detection(self,img):
+
+        cv.circle(img,(100,100),20,(255,255,0),2)
+
+
+        return img # return processed image
+
     def cam1_callback(self, msg):
         try:
             # Convert the ROS image message to an OpenCV image (cv::Mat)
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+            img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
             
+            cv_image = img.copy()
 
             #detect and mark lines
 
@@ -171,6 +206,38 @@ class ROSWorker(QtCore.QThread):
                 cv.circle(cv_image,(x1,y1),4,(255,0,255),2)
                 cv.circle(cv_image,(x2,y2),4,(0,255,255),2)
 
+            x_int = 0
+            y_int = 0
+            angle = 0
+            if len(adjusted_lines) >= 2:
+                x1,y1,x2,y2,_,_ = adjusted_lines[0]
+                x3,y3,x4,y4,_,_ = adjusted_lines[1]
+
+                try:
+                    m1 = (y2-y1)/(x2-x1)
+                    m2 = (y4-y3)/(x4-x3)
+                    b1 = y1 - m1 * x1
+                    b2 = y3 - m2 * x3
+
+                    x_int = int((b2-b1)/(m1-m2))
+                    y_int = int(m1*x_int + b1)
+
+                    dx1 = x2-x1
+                    dy1 = y2-y1
+                    dx2 = x4-x3
+                    dy2 = y4-y3
+
+                    costheta = (dx1*dx2 + dy1*dy2)/np.sqrt((dx1**2+dy1**2)*(dx2**2+dy2**2))
+                    angle = np.arccos(costheta) * 180 / np.pi
+
+                    cv.circle(cv_image,(x_int,y_int),20,(255,255,0),2)
+                except Exception as e:
+                    print(f"Error: x={x_int},y={y_int}")
+                    x_int = 0
+                    y_int = 0
+                    angle = 0
+
+
             # for line in lines:
             #     x1,y1,x2,y2 = line[0]
             #     cv.line(cv_image,(x1,y1),(x2,y2),(255,0,0),4)
@@ -181,13 +248,65 @@ class ROSWorker(QtCore.QThread):
 
 
             img_final = cv_image
+
+            # adjusted image
+
+            height, width, channel = cv_image.shape
+
+
+
+            offsetx = 0
+            offsety = int(self.pitch_deg * 7.41) # from spreadsheet
+            trans_mat = np.array([[1, 0, offsetx], [0, 1, offsety]], dtype=np.float32)
+            adjusted = cv_image.copy()
+            adjusted = cv.warpAffine(adjusted, trans_mat, (adjusted.shape[1], adjusted.shape[0]))
+
+            img_final_adjusted = adjusted
+
+            x_int_adj = x_int + offsetx
+            y_int_adj = y_int + offsety # TODO will need to adjust these for roll
+
+            # calculating direction to corner
+            corner_pos = (6, -2.75, 0.5)
+
+            horizontal_fov = 90 * np.pi / 180
+            vertical_fov = 54 * np.pi / 180
+
+            dx = x_int_adj - width / 2
+            dy = y_int_adj - height / 2
+
+            theta = dx * horizontal_fov / width
+            phi = dy * vertical_fov / height
+
+            corner_dir = [np.cos(phi)*np.cos(theta),np.cos(phi)*np.sin(theta),np.sin(phi)]
+
+
+
+            
+            #clue detection
+            clue_img = self.clue_detection(img.copy())
+
             # Convert the OpenCV image to QImage (which can be displayed in Qt)
             height, width, channel = img_final.shape
             bytes_per_line = 3 * width
             q_image = QtGui.QImage(img_final.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
             
-            # Emit signal with QImage
+            height, width, channel = img_final_adjusted.shape
+            bytes_per_line = 3 * width
+            q_image_adjusted = QtGui.QImage(img_final_adjusted.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+            height, width, channel = clue_img.shape
+            bytes_per_line = 3 * width
+            q_image_clue = QtGui.QImage(clue_img.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+            # emit signal with QImage
             self.image1_ready.emit(q_image)
+            self.image3_ready.emit(q_image_adjusted)
+            self.clue_img_ready.emit(q_image_clue)
+            # emit data signal
+            data = [x_int,y_int,offsetx,offsety,angle,theta,phi]
+            data.extend(corner_dir)
+            self.detection_data_signal.emit(data)
         except Exception as e:
             print(traceback.format_exc())
 
@@ -255,7 +374,7 @@ class ROSWorker(QtCore.QThread):
             self.center_data_signal.emit([row_max,col_max,self.center_delta[0],self.center_delta[1]])
             # print(f"Center: {col_max}, {row_max}")
 
-            
+            self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
 
             img_final = mask_rgb
             # Convert the OpenCV image to QImage (which can be displayed in Qt)
