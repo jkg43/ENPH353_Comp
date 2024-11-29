@@ -6,22 +6,25 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1280</width>
-    <height>834</height>
+    <width>1330</width>
+    <height>836</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QLabel" name="cam_display">
+   <widget class="QLabel" name="cam0_display">
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>40</y>
+      <y>60</y>
       <width>400</width>
       <height>200</height>
      </rect>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
     </property>
     <property name="text">
      <string/>
@@ -30,7 +33,7 @@
    <widget class="QDoubleSpinBox" name="motor_speed_input">
     <property name="geometry">
      <rect>
-      <x>140</x>
+      <x>30</x>
       <y>540</y>
       <width>151</width>
       <height>31</height>
@@ -55,7 +58,7 @@
    <widget class="QPushButton" name="motor_speed_button">
     <property name="geometry">
      <rect>
-      <x>300</x>
+      <x>190</x>
       <y>540</y>
       <width>101</width>
       <height>25</height>
@@ -68,7 +71,7 @@
    <widget class="QPushButton" name="motor_stop_button">
     <property name="geometry">
      <rect>
-      <x>300</x>
+      <x>190</x>
       <y>570</y>
       <width>80</width>
       <height>25</height>
@@ -81,7 +84,7 @@
    <widget class="QDoubleSpinBox" name="back_speed_input">
     <property name="geometry">
      <rect>
-      <x>140</x>
+      <x>30</x>
       <y>610</y>
       <width>151</width>
       <height>31</height>
@@ -106,7 +109,7 @@
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
-      <x>140</x>
+      <x>30</x>
       <y>520</y>
       <width>111</width>
       <height>17</height>
@@ -119,7 +122,7 @@
    <widget class="QLabel" name="label_2">
     <property name="geometry">
      <rect>
-      <x>140</x>
+      <x>30</x>
       <y>590</y>
       <width>161</width>
       <height>17</height>
@@ -132,14 +135,17 @@
      <string>Back Motor Speed Increase</string>
     </property>
    </widget>
-   <widget class="QLabel" name="cam_display2">
+   <widget class="QLabel" name="cam_top_display">
     <property name="geometry">
      <rect>
-      <x>920</x>
-      <y>140</y>
-      <width>256</width>
-      <height>256</height>
+      <x>1170</x>
+      <y>600</y>
+      <width>128</width>
+      <height>128</height>
      </rect>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
     </property>
     <property name="text">
      <string/>
@@ -148,8 +154,8 @@
    <widget class="QLabel" name="center_label">
     <property name="geometry">
      <rect>
-      <x>900</x>
-      <y>430</y>
+      <x>1010</x>
+      <y>640</y>
       <width>151</width>
       <height>20</height>
      </rect>
@@ -161,8 +167,8 @@
    <widget class="QLabel" name="delta_label">
     <property name="geometry">
      <rect>
-      <x>900</x>
-      <y>460</y>
+      <x>1010</x>
+      <y>670</y>
       <width>151</width>
       <height>20</height>
      </rect>
@@ -174,8 +180,8 @@
    <widget class="QDoubleSpinBox" name="motor_delta_input">
     <property name="geometry">
      <rect>
-      <x>900</x>
-      <y>540</y>
+      <x>1010</x>
+      <y>750</y>
       <width>171</width>
       <height>31</height>
      </rect>
@@ -196,8 +202,8 @@
    <widget class="QLabel" name="label_3">
     <property name="geometry">
      <rect>
-      <x>900</x>
-      <y>520</y>
+      <x>1010</x>
+      <y>730</y>
       <width>161</width>
       <height>17</height>
      </rect>
@@ -209,8 +215,8 @@
    <widget class="QPushButton" name="motor_delta_button">
     <property name="geometry">
      <rect>
-      <x>1080</x>
-      <y>540</y>
+      <x>1190</x>
+      <y>750</y>
       <width>61</width>
       <height>25</height>
      </rect>
@@ -222,8 +228,8 @@
    <widget class="QLabel" name="angle_label">
     <property name="geometry">
      <rect>
-      <x>900</x>
-      <y>490</y>
+      <x>1010</x>
+      <y>700</y>
       <width>201</width>
       <height>17</height>
      </rect>
@@ -232,14 +238,17 @@
      <string>Pitch: </string>
     </property>
    </widget>
-   <widget class="QLabel" name="cam_display_adjusted">
+   <widget class="QLabel" name="cam1_display">
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>250</y>
+      <y>270</y>
       <width>400</width>
       <height>200</height>
      </rect>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
     </property>
     <property name="text">
      <string/>
@@ -248,9 +257,9 @@
    <widget class="QLabel" name="intersection_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>500</y>
-      <width>321</width>
+      <x>340</x>
+      <y>530</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -261,8 +270,8 @@
    <widget class="QLabel" name="pitch_offset_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>530</y>
+      <x>340</x>
+      <y>560</y>
       <width>251</width>
       <height>17</height>
      </rect>
@@ -274,9 +283,9 @@
    <widget class="QLabel" name="adjusted_intersection_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>560</y>
-      <width>271</width>
+      <x>340</x>
+      <y>590</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -287,9 +296,9 @@
    <widget class="QLabel" name="line_angle_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>590</y>
-      <width>151</width>
+      <x>340</x>
+      <y>620</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -300,9 +309,9 @@
    <widget class="QLabel" name="theta_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>620</y>
-      <width>131</width>
+      <x>340</x>
+      <y>650</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -313,9 +322,9 @@
    <widget class="QLabel" name="phi_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>640</y>
-      <width>131</width>
+      <x>340</x>
+      <y>670</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -326,9 +335,9 @@
    <widget class="QLabel" name="dir_label">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>660</y>
-      <width>311</width>
+      <x>340</x>
+      <y>690</y>
+      <width>251</width>
       <height>17</height>
      </rect>
     </property>
@@ -336,14 +345,211 @@
      <string>Dir: X: , Y: , Z: </string>
     </property>
    </widget>
-   <widget class="QLabel" name="clue_cam">
+   <widget class="QLabel" name="clue_display">
     <property name="geometry">
      <rect>
-      <x>450</x>
-      <y>40</y>
+      <x>910</x>
+      <y>60</y>
       <width>400</width>
       <height>200</height>
      </rect>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="cam3_display">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>270</y>
+      <width>400</width>
+      <height>200</height>
+     </rect>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
+    </property>
+    <property name="midLineWidth">
+     <number>0</number>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="adjusted_intersection_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>590</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Adjusted Intersection: X: , Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="dir_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>690</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Dir: X: , Y: , Z: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="phi_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>670</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Phi: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="theta_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>650</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Theta:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="pitch_offset_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>560</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Offset: X: , Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="line_angle_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>620</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Angle: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="intersection_label_2">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>530</y>
+      <width>251</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Intersection: X: . Y:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_4">
+    <property name="geometry">
+     <rect>
+      <x>340</x>
+      <y>500</y>
+      <width>111</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Forward Cam</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_5">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>500</y>
+      <width>111</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Backward Cam</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_Q1">
+    <property name="geometry">
+     <rect>
+      <x>230</x>
+      <y>740</y>
+      <width>201</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Q1: X: , Y: , Z: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_Q2">
+    <property name="geometry">
+     <rect>
+      <x>440</x>
+      <y>740</y>
+      <width>201</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Q2: X: , Y: , Z: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_Qavg">
+    <property name="geometry">
+     <rect>
+      <x>650</x>
+      <y>740</y>
+      <width>191</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Qavg: X: , Y: , Z: </string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="cam2_display">
+    <property name="geometry">
+     <rect>
+      <x>450</x>
+      <y>60</y>
+      <width>400</width>
+      <height>200</height>
+     </rect>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
     </property>
     <property name="text">
      <string/>
@@ -355,7 +561,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1280</width>
+     <width>1330</width>
      <height>22</height>
     </rect>
    </property>

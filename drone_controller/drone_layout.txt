@@ -58,3 +58,4 @@ west wall 0 2.75 0.25
 
 
 corner of north wall and east wall: 6 -2.75 0.5
+corner of north wall and west wall: 6 2.75 0.5
