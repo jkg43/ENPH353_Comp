@@ -555,6 +555,57 @@
      <string/>
     </property>
    </widget>
+   <widget class="QComboBox" name="stage_box">
+    <property name="geometry">
+     <rect>
+      <x>860</x>
+      <y>420</y>
+      <width>111</width>
+      <height>25</height>
+     </rect>
+    </property>
+    <property name="currentIndex">
+     <number>4</number>
+    </property>
+    <item>
+     <property name="text">
+      <string>Original</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Mask</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Edges</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Lines</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Adjusted</string>
+     </property>
+    </item>
+   </widget>
+   <widget class="QLabel" name="label_6">
+    <property name="geometry">
+     <rect>
+      <x>860</x>
+      <y>400</y>
+      <width>141</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Image Processing Stage</string>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

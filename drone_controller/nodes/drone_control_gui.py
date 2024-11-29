@@ -22,6 +22,7 @@ class Control_Gui(QtWidgets.QMainWindow):
 
     send_velocity_signal = QtCore.pyqtSignal(list)
     send_delta_signal = QtCore.pyqtSignal(list)
+    send_stage_signal = QtCore.pyqtSignal(int)
 
 
     def __init__(self):
@@ -34,6 +35,7 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.motor_speed_button.clicked.connect(self.SLOT_speed_button)
         self.motor_stop_button.clicked.connect(self.SLOT_stop_button)
         self.motor_delta_button.clicked.connect(self.SLOT_delta_button)
+        self.stage_box.currentIndexChanged.connect(self.SLOT_stage_box)
 
     
         if rosgraph.is_master_online():
@@ -57,6 +59,7 @@ class Control_Gui(QtWidgets.QMainWindow):
 
             self.send_velocity_signal.connect(self.ros_worker.send_new_speed)
             self.send_delta_signal.connect(self.ros_worker.set_new_delta)
+            self.send_stage_signal.connect(self.ros_worker.set_new_stage)
 
         else:
             rospy.logwarn("ROS master not running. Skipping ROS worker initialization.")
@@ -110,6 +113,9 @@ class Control_Gui(QtWidgets.QMainWindow):
     def SLOT_delta_button(self):
         delta = self.motor_delta_input.value()
         self.send_delta_signal.emit([delta])
+
+    def SLOT_stage_box(self,index):
+        self.send_stage_signal.emit(index)
     
 
 # HELPER FUNCTIONS
@@ -119,6 +125,13 @@ def cvToQImg(cv_image):
     height, width, channel = cv_image.shape
     bytes_per_line = 3 * width
     return QtGui.QImage(cv_image.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+# IMAGE PROCESSING STAGES
+STAGE_ORIGINAL = 0
+STAGE_MASK = 1
+STAGE_EDGES = 2
+STAGE_LINES = 3
+STAGE_ADJUSTED = 4
 
 
 
@@ -181,6 +194,9 @@ class ROSWorker(QtCore.QThread):
     # used to change sign of or ignore certain features for certain cameras
     cam_adjustments = ((1,1,1,1),(-1,1,-1,-1),(1,1,1,1),(1,1,1,1))
 
+    #
+    current_stage = STAGE_ADJUSTED
+    
 
 
     def __init__(self):
@@ -258,9 +274,11 @@ class ROSWorker(QtCore.QThread):
 
 
 
-    def detect_corner(self,cv_image,adjustments):
+    def detect_corner(self,img,adjustments):
 
         pitch_mult,roll_mult,x_mult,y_mult = adjustments
+
+        cv_image = img.copy()
 
         lowerH = 100
         upperH = 255
@@ -318,9 +336,6 @@ class ROSWorker(QtCore.QThread):
 
         offsetx = 0 # TODO will need to adjust these for roll
         offsety = int(self.pitch_deg * 7.41 * pitch_mult) # from spreadsheet
-        trans_mat = np.array([[1, 0, offsetx], [0, 1, offsety]], dtype=np.float32)
-        adjusted = cv_image.copy()
-        adjusted = cv.warpAffine(adjusted, trans_mat, (adjusted.shape[1], adjusted.shape[0]))
 
 
         # further processing if both wall edges are detected
@@ -379,7 +394,24 @@ class ROSWorker(QtCore.QThread):
                 phi = 0
                 corner_dir = [0,0,0]
 
-        return [cv_image,adjusted,corner_dir,theta,phi,x_int,y_int,offsetx,offsety,angle]
+        trans_mat = np.array([[1, 0, offsetx], [0, 1, offsety]], dtype=np.float32)
+        adjusted = cv_image.copy()
+        adjusted = cv.warpAffine(adjusted, trans_mat, (adjusted.shape[1], adjusted.shape[0]))
+
+        if self.current_stage == STAGE_ORIGINAL:
+            img_final = img
+        elif self.current_stage == STAGE_MASK:
+            img_final = cv.cvtColor(mask,cv.COLOR_GRAY2RGB)
+        elif self.current_stage == STAGE_EDGES:
+            img_final = cv.cvtColor(edges,cv.COLOR_GRAY2RGB)
+        elif self.current_stage == STAGE_LINES:
+            img_final = cv_image
+        elif self.current_stage == STAGE_ADJUSTED:
+            img_final = adjusted
+        else:
+            img_final = img
+
+        return [img_final,corner_dir,theta,phi,x_int,y_int,offsetx,offsety,angle]
 
 
     # cam is the cam number, from 0-3
@@ -390,7 +422,7 @@ class ROSWorker(QtCore.QThread):
             cv_image = img.copy()
 
 
-            img_final,img_final_adjusted,corner_dir,theta,phi,x_int,y_int,offsetx,offsety,angle = (
+            img_final,corner_dir,theta,phi,x_int,y_int,offsetx,offsety,angle = (
                 self.detect_corner(cv_image,self.cam_adjustments[cam])
             )
 
@@ -401,7 +433,7 @@ class ROSWorker(QtCore.QThread):
                 self.clue_img = img.copy()
 
             # emit image signal
-            self.cam_img_signals[cam].emit(cvToQImg(img_final_adjusted))
+            self.cam_img_signals[cam].emit(cvToQImg(img_final))
             
             # emit data signal
             data = [x_int,y_int,offsetx,offsety,angle,theta,phi]
@@ -484,6 +516,9 @@ class ROSWorker(QtCore.QThread):
 
     def set_new_delta(self,data):
         self.pixel_delta = data[0]
+
+    def set_new_stage(self,data):
+        self.current_stage = data
 
 
 

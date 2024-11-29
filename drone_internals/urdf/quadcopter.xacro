@@ -10,9 +10,12 @@
   <xacro:property name="arm_radius" value="0.01"/>
   <xacro:property name="arm_length" value="0.1"/>
   <xacro:property name="arm_mass" value="0.01"/>
+  <xacro:property name="arm_height_offset" value="0.025"/>
+  <xacro:property name="arm_angle" value="1.0471975512"/>
+  <xacro:property name="arm_pos_radius" value="0.04"/>
   <xacro:property name="propeller_radius" value="0.05"/>
   <xacro:property name="propeller_height" value="0.01"/>
-  <xacro:property name="propeller_height_offset" value="0.025"/>
+  <xacro:property name="propeller_height_offset" value="0.055"/>
   <xacro:property name="propeller_mass" value="0.01"/>
 
 
@@ -52,20 +55,20 @@
   <xacro:macro name="arm" params="i">
     <link name="arm${i}">
       <visual>
-        <origin xyz="${cos((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${frame_height/2-arm_radius}" rpy="0 ${pi/2} ${(i-1)*pi/2+pi/4}"/>
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${frame_height/2-arm_radius+arm_height_offset}" rpy="0 ${arm_angle} ${(i-1)*pi/2+pi/4}"/>
         <geometry>
           <cylinder radius="${arm_radius}" length="${arm_length}"/>
         </geometry>
         <material name="arm_material"/>
       </visual>
       <collision>
-        <origin xyz="${cos((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${frame_height/2-arm_radius}" rpy="0 ${pi/2} ${(i-1)*pi/2+pi/4}"/>
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${frame_height/2-arm_radius+arm_height_offset}" rpy="0 ${arm_angle} ${(i-1)*pi/2+pi/4}"/>
         <geometry>
           <cylinder radius="${arm_radius}" length="${arm_length}"/>
         </geometry>
       </collision>
       <xacro:cylinder_inertial radius="${arm_radius}" height="${arm_length}" mass="${arm_mass}">
-        <origin xyz="${cos((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(frame_radius+arm_length/2)} ${frame_height/2-arm_radius}" rpy="0 ${pi/2} ${(i-1)*pi/2+pi/4}"/>
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${sin((i-1)*pi/2+pi/4)*(arm_pos_radius+arm_length/2)} ${frame_height/2-arm_radius+arm_height_offset}" rpy="0 ${arm_angle} ${(i-1)*pi/2+pi/4}"/>
       </xacro:cylinder_inertial>
     </link>
    
@@ -104,7 +107,7 @@
     <joint name="arm${i}_propeller${i}" type="revolute">
       <parent link="arm${i}"/>
       <child link="propeller${i}"/>
-      <origin xyz="${cos((i-1)*pi/2+pi/4)*(frame_radius+arm_length)} ${sin((i-1)*pi/2+pi/4)*(frame_radius+arm_length)} ${frame_height/2-arm_radius+propeller_height_offset}" rpy="0 0 0"/>
+      <origin xyz="${cos((i-1)*pi/2+pi/4)*(frame_radius+arm_length*sin(arm_angle))} ${sin((i-1)*pi/2+pi/4)*(frame_radius+arm_length*sin(arm_angle))} ${frame_height/2-arm_radius+propeller_height_offset}" rpy="0 0 0"/>
       <axis xyz="0 0 1"/>
       <limit lower="0" upper="0" effort="0" velocity="0"/>
     </joint>
@@ -152,208 +155,90 @@
     <material>Gazebo/Orange</material>
   </gazebo>
 
+  <!-- camera macro -->
+  <xacro:macro name="camera" params="i x y z r p yw w h">
+    <link name='camera${i}_link'>
+      <xacro:box_inertial name="camera${i}_link" m="${camera_mass}" x="${camera_width}" y="${camera_length}" z="${camera_height}"/>
+      <collision name='camera${i}_link_collision'>
+        <geometry>
+          <box size="${camera_length} ${camera_width} ${camera_height}"/>
+        </geometry>
+      </collision>
+      <visual name='camera${i}_link_visual'>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${camera_length} ${camera_width} ${camera_height}"/>
+        </geometry>
+      </visual>
+    </link>
+
+    <joint name="camera${i}_joint" type="fixed">
+      <parent link="frame"/>
+      <child link="camera${i}_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="${r} ${p} ${yw}"/>
+    </joint>
+
+    <gazebo reference="camera${i}_link">
+      <sensor type="camera" name="camera${i}">
+        <update_rate>30.0</update_rate>
+        <camera name="head">
+          <horizontal_fov>1.57079632679</horizontal_fov>
+          <image>
+            <width>${w}</width>
+            <height>${h}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.02</near>
+            <far>300</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <!-- Noise is sampled independently per pixel on each frame.
+                That pixel's noise value is added to each of its color
+                channels, which at that point lie in the range [0,1]. -->
+            <mean>0.0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+        <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
+          <alwaysOn>true</alwaysOn>
+          <updateRate>0.0</updateRate>
+          <imageTopicName>image_raw</imageTopicName>
+          <!-- <xacro:attribute name="cameraName" value="camera${i}"/>
+          <xacro:attribute name="frameName" value="camera${i}_link"/> -->
+          <cameraInfoTopicName>camera_info</cameraInfoTopicName>
+          <cameraName>camera${i}</cameraName>
+          <frameName>camera${i}_link</frameName>
+          <hackBaseline>0.07</hackBaseline>
+          <distortionK1>0.0</distortionK1>
+          <distortionK2>0.0</distortionK2>
+          <distortionK3>0.0</distortionK3>
+          <distortionT1>0.0</distortionT1>
+          <distortionT2>0.0</distortionT2>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+<!-- defining 4 arms and propellors -->
+<xacro:arm i="1"/>
+<xacro:arm i="2"/>
+<xacro:arm i="3"/>
+<xacro:arm i="4"/>
+
+<xacro:propeller i="1" mat="Gazebo/RedTransparent"/>
+<xacro:propeller i="2" mat="Gazebo/RedTransparent"/>
+<xacro:propeller i="3" mat="Gazebo/GreenTransparent"/>
+<xacro:propeller i="4" mat="Gazebo/GreenTransparent"/>
 
 
-  <!-- defining 4 arms and propellors -->
-  <xacro:arm i="1"/>
-  <xacro:arm i="2"/>
-  <xacro:arm i="3"/>
-  <xacro:arm i="4"/>
- 
-  <xacro:propeller i="1" mat="Gazebo/RedTransparent"/>
-  <xacro:propeller i="2" mat="Gazebo/RedTransparent"/>
-  <xacro:propeller i="3" mat="Gazebo/GreenTransparent"/>
-  <xacro:propeller i="4" mat="Gazebo/GreenTransparent"/>
+<!-- defining cameras -->
+<xacro:camera i="0" x="${frame_radius}" y="0" z="0" r="0" p="0" yw="0" w="800" h="400"/>
+<xacro:camera i="1" x="${-frame_radius}" y="0" z="0" r="0" p="0" yw="${pi}" w="800" h="400"/>
+<xacro:camera i="_top" x="0" y="0" z="${frame_height/2}" r="0" p="-1.8" yw="0" w="128" h="128"/>
 
 
-  <!-- cameras -->
-  <link name='camera0_link'>
-    <xacro:box_inertial name="camera0_link" m="${camera_mass}" x="${camera_width}" y="${camera_length}" z="${camera_height}"/>
-    <collision name='camera0_link_collision'>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </collision>
-    <visual name='camera0_link_visual'>
-      <origin xyz="0 0 0" rpy=" 0 0 0"/>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </visual>
-  </link>
-
-  <joint name="camera0_joint" type="fixed">
-    <parent link="frame"/>
-    <child link="camera0_link"/>
-    <origin xyz="${frame_radius} 0 0"/>
-  </joint>
-
-
-  <link name='camera_top_link'>
-    <xacro:box_inertial name="camera_top_link" m="${camera_mass}" x="${camera_width}" y="${camera_length}" z="${camera_height}"/>
-    <collision name='camera_top_link_collision'>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </collision>
-    <visual name='camera_top_link_visual'>
-      <origin xyz="0 0 0" rpy=" 0 0 0"/>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </visual>
-  </link>
-
-  <joint name="camera_top_joint" type="fixed">
-    <parent link="frame"/>
-    <child link="camera_top_link"/>
-    <origin xyz="0 0 ${frame_height/2}" rpy="0 -1.8 0"/>
-  </joint>
-
-
-  <link name='camera1_link'>
-    <xacro:box_inertial name="camera1_link" m="${camera_mass}" x="${camera_width}" y="${camera_length}" z="${camera_height}"/>
-    <collision name='camera1_link_collision'>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </collision>
-    <visual name='camera1_link_visual'>
-      <origin xyz="0 0 0" rpy=" 0 0 0"/>
-      <geometry>
-        <box size="${camera_length} ${camera_width} ${camera_height}"/>
-      </geometry>
-    </visual>
-  </link>
-
-  <joint name="camera1_joint" type="fixed">
-    <parent link="frame"/>
-    <child link="camera1_link"/>
-    <origin xyz="${-1*frame_radius} 0 0" rpy="0 0 ${pi}"/>
-  </joint>
-
-  <!-- camera plugin -->
-  <gazebo reference="camera0_link">
-    <sensor type="camera" name="camera0">
-      <update_rate>30.0</update_rate>
-      <camera name="head">
-        <horizontal_fov>1.57079632679</horizontal_fov>
-        <image>
-          <width>800</width>
-          <height>400</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.02</near>
-          <far>300</far>
-        </clip>
-        <noise>
-          <type>gaussian</type>
-          <!-- Noise is sampled independently per pixel on each frame.
-              That pixel's noise value is added to each of its color
-              channels, which at that point lie in the range [0,1]. -->
-          <mean>0.0</mean>
-          <stddev>0.007</stddev>
-        </noise>
-      </camera>
-      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-        <alwaysOn>true</alwaysOn>
-        <updateRate>0.0</updateRate>
-        <cameraName>camera0</cameraName>
-        <imageTopicName>image_raw</imageTopicName>
-        <cameraInfoTopicName>camera_info</cameraInfoTopicName>
-        <frameName>camera0_link</frameName>
-        <hackBaseline>0.07</hackBaseline>
-        <distortionK1>0.0</distortionK1>
-        <distortionK2>0.0</distortionK2>
-        <distortionK3>0.0</distortionK3>
-        <distortionT1>0.0</distortionT1>
-        <distortionT2>0.0</distortionT2>
-      </plugin>
-    </sensor>
-  </gazebo>
-
-
-  <gazebo reference="camera_top_link">
-    <sensor type="camera" name="camera_top">
-      <update_rate>30.0</update_rate>
-      <camera name="head">
-        <horizontal_fov>0.78539816339</horizontal_fov>
-        <image>
-          <width>128</width>
-          <height>128</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.02</near>
-          <far>300</far>
-        </clip>
-        <noise>
-          <type>gaussian</type>
-          <!-- Noise is sampled independently per pixel on each frame.
-              That pixel's noise value is added to each of its color
-              channels, which at that point lie in the range [0,1]. -->
-          <mean>0.0</mean>
-          <stddev>0.007</stddev>
-        </noise>
-      </camera>
-      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-        <alwaysOn>true</alwaysOn>
-        <updateRate>0.0</updateRate>
-        <cameraName>camera_top</cameraName>
-        <imageTopicName>image_raw</imageTopicName>
-        <cameraInfoTopicName>camera_info</cameraInfoTopicName>
-        <frameName>camera_top_link</frameName>
-        <hackBaseline>0.07</hackBaseline>
-        <distortionK1>0.0</distortionK1>
-        <distortionK2>0.0</distortionK2>
-        <distortionK3>0.0</distortionK3>
-        <distortionT1>0.0</distortionT1>
-        <distortionT2>0.0</distortionT2>
-      </plugin>
-    </sensor>
-  </gazebo>
-
-
-  <gazebo reference="camera1_link">
-    <sensor type="camera" name="camera1">
-      <update_rate>30.0</update_rate>
-      <camera name="head">
-        <horizontal_fov>1.57079632679</horizontal_fov>
-        <image>
-          <width>800</width>
-          <height>400</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.02</near>
-          <far>300</far>
-        </clip>
-        <noise>
-          <type>gaussian</type>
-          <!-- Noise is sampled independently per pixel on each frame.
-              That pixel's noise value is added to each of its color
-              channels, which at that point lie in the range [0,1]. -->
-          <mean>0.0</mean>
-          <stddev>0.007</stddev>
-        </noise>
-      </camera>
-      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-        <alwaysOn>true</alwaysOn>
-        <updateRate>0.0</updateRate>
-        <cameraName>camera1</cameraName>
-        <imageTopicName>image_raw</imageTopicName>
-        <cameraInfoTopicName>camera_info</cameraInfoTopicName>
-        <frameName>camera1_link</frameName>
-        <hackBaseline>0.07</hackBaseline>
-        <distortionK1>0.0</distortionK1>
-        <distortionK2>0.0</distortionK2>
-        <distortionK3>0.0</distortionK3>
-        <distortionT1>0.0</distortionT1>
-        <distortionT2>0.0</distortionT2>
-      </plugin>
-    </sensor>
-  </gazebo>
 
 
   <!-- motor control plugin-->
