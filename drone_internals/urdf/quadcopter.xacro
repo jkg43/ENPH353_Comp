@@ -6,7 +6,7 @@
   <!-- drone properties -->
   <xacro:property name="frame_radius" value="0.05"/>
   <xacro:property name="frame_height" value="0.025"/>
-  <xacro:property name="frame_mass" value="0.11"/>
+  <xacro:property name="frame_mass" value="0.38"/>
   <xacro:property name="arm_radius" value="0.01"/>
   <xacro:property name="arm_length" value="0.1"/>
   <xacro:property name="arm_mass" value="0.01"/>
@@ -236,6 +236,8 @@
 <!-- defining cameras -->
 <xacro:camera i="0" x="${frame_radius}" y="0" z="0" r="0" p="0" yw="0" w="800" h="400"/>
 <xacro:camera i="1" x="${-frame_radius}" y="0" z="0" r="0" p="0" yw="${pi}" w="800" h="400"/>
+<xacro:camera i="2" x="0" y="${frame_radius}" z="0" r="0" p="0" yw="${pi/2}" w="800" h="400"/>
+<xacro:camera i="3" x="0" y="${-frame_radius}" z="0" r="0" p="0" yw="${-pi/2}" w="800" h="400"/>
 <xacro:camera i="_top" x="0" y="0" z="${frame_height/2}" r="0" p="-1.8" yw="0" w="128" h="128"/>
 
 

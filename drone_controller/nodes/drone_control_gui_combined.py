@@ -19,11 +19,78 @@ from drone_internals.msg import MotorSpeed
 from cv_bridge import CvBridge
 
 
+
+
+# IMAGE PROCESSING STAGES
+STAGE_ORIGINAL = 0
+STAGE_MASK = 1
+STAGE_EDGES = 2
+STAGE_LINES = 3
+STAGE_ADJUSTED = 4
+
+# HELPER FUNCTIONS
+
+# rotate a point around another ccw - angle in radians
+def rotate(origin, point, angle):
+
+    dx = point[0] - origin[0]
+    dy = point[1] - origin[1]
+
+    cosa = np.cos(angle)
+    sina = np.sin(angle)
+
+    qx = origin[0] + cosa * (dx) - sina * (dy)
+    qy = origin[1] + sina * (dx) + cosa * (dy)
+    return qx, qy
+
+
 class Control_Gui(QtWidgets.QMainWindow):
 
-    send_velocity_signal = QtCore.pyqtSignal(list)
-    send_delta_signal = QtCore.pyqtSignal(list)
-    send_stage_signal = QtCore.pyqtSignal(int)
+
+    # CLUE DETECTION VARIABLES
+
+    clue_img = None
+
+    current_clue_cam = 0
+
+
+    # TOP CAMERA VARIABLES
+
+
+    center_target = [64,64]
+    center_delta = [0,0]
+
+    pixel_delta = 0
+
+    pitch_deg = 0.0
+    roll_deg = 0.0
+
+
+    # SIDE CAMERA VARIABLES
+
+    # camera positions:
+    # 0 - front
+    # 1 - back
+    # 2 - left
+    # 3 - right
+
+    
+    # normalized vector pointing to each corner, if detected
+    # currently just represents which corner each camera has detected
+    # TODO better way to determine which corner is detected
+    corner_dirs = [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
+
+
+    # for each camera:
+    # pitch_mult,roll_mult,x_mult,y_mult, pitch_rotate
+    # used to change sign of or ignore certain features for certain cameras
+    cam_adjustments = ((2,-2,1,1,False),(-2,2,-1,-1,False),(-2,2,1,1,True),(2,2,1,1,True))
+
+    # how much to scale the camera feeds by
+    cam_scale = 0.5
+
+    # MISC VARIABLES
+    current_stage = STAGE_ADJUSTED
 
 
     def __init__(self):
@@ -38,36 +105,34 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.motor_delta_button.clicked.connect(self.SLOT_delta_button)
         self.stage_box.currentIndexChanged.connect(self.SLOT_stage_box)
 
+        self.cam_displays = (self.cam0_display,self.cam1_display,self.cam2_display,self.cam3_display)
+        self.cam_data_funcs = (self.update_cam0_data_label,self.update_cam1_data_label,lambda *args: None,lambda *args: None)
+
     
         if rosgraph.is_master_online():
-            # Start the ROS Worker thread
-            self.ros_worker = ROSWorker()
-            # connect image signals
-            self.ros_worker.top_cam_img_signal.connect(partial(self.display_img,display=self.cam_top_display))
-            self.ros_worker.clue_img_signal.connect(partial(self.display_img,display=self.clue_display))
-            cam_displays = (self.cam0_display,self.cam1_display,self.cam2_display,self.cam3_display)
-            # need to do this because pyQt needs the signals to be referenced as class attributes to bind
-            cam_signals = (self.ros_worker.cam0_signal,self.ros_worker.cam1_signal,self.ros_worker.cam2_signal,self.ros_worker.cam3_signal)
-            for i,signal in enumerate(cam_signals):
-                signal.connect(partial(self.display_img,display=cam_displays[i]))
-            # connect data signals
-            self.ros_worker.top_cam_data_signal.connect(self.update_center_label)
-            self.ros_worker.processing_data_signal.connect(self.update_processing_label)
-            self.ros_worker.cam0_data.connect(self.update_cam0_data_label)
-            self.ros_worker.cam1_data.connect(self.update_cam1_data_label)
-            self.ros_worker.time_signal.connect(self.update_time_label)
+            self.bridge = CvBridge()
+            self.clock_sub = rospy.Subscriber('/clock',Clock,self.clock_callback)
+            self.cam_top_sub = rospy.Subscriber('/B1/camera_top/image_raw', Image, self.top_cam_callback)
+            self.cam0_sub = rospy.Subscriber('/B1/camera0/image_raw', Image, partial(self.cam_callback_generic,cam=0))
+            self.cam1_sub = rospy.Subscriber('/B1/camera1/image_raw', Image, partial(self.cam_callback_generic,cam=1))
+            self.cam2_sub = rospy.Subscriber('/B1/camera2/image_raw', Image, partial(self.cam_callback_generic,cam=2))
+            self.cam3_sub = rospy.Subscriber('/B1/camera3/image_raw', Image, partial(self.cam_callback_generic,cam=3))
+            self.speed_pub = rospy.Publisher('/motor_speed_cmd', MotorSpeed, queue_size=1)
+            self.speeds = [0.0,0.0,0.0,0.0]
 
-            self.ros_worker.start()
-
-            self.send_velocity_signal.connect(self.ros_worker.send_new_speed)
-            self.send_delta_signal.connect(self.ros_worker.set_new_delta)
-            self.send_stage_signal.connect(self.ros_worker.set_new_stage)
+            self.current_time = 0
+            self.prev_update_time = 0
+            self.update_period = 1.0 / 20
 
         else:
             rospy.logwarn("ROS master not running. Skipping ROS worker initialization.")
 
+    # QTGUI FUNCTIONS
 
-    def display_img(self,q_image,display):
+    def display_img(self,cv_image,display):
+        height, width, channel = cv_image.shape
+        bytes_per_line = 3 * width
+        q_image = QtGui.QImage(cv_image.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
         display.setPixmap(QtGui.QPixmap.fromImage(q_image))
         display.setScaledContents(True)
 
@@ -104,151 +169,29 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.label_Q2.setText(f"Q2: X: {data[3]:.2f}, Y: {data[4]:.2f}, Z: {data[5]:.2f}")
         self.label_Qavg.setText(f"Qavg: X: {data[6]:.2f}, Y: {data[7]:.2f}, Z: {data[8]:.2f}")
 
-    def update_time_label(self,data):
-        self.frame_time_label.setText(f"Frame Time(ms): {(data[0] - data[1])*1000:.1f}")
-        self.time_label.setText(f"Time: {data[0]:.2f}")
-
     def SLOT_speed_button(self):
         new_speed = self.motor_speed_input.value()
         back_delta = self.back_speed_input.value()
-        velocities = [new_speed, -new_speed-back_delta, new_speed+back_delta, -new_speed]
-        self.send_velocity_signal.emit(velocities)
+        self.speeds = [new_speed, -new_speed-back_delta, new_speed+back_delta, -new_speed]
     
     def SLOT_stop_button(self):
-        velocities = [0.0, 0.0, 0.0, 0.0]
-        self.send_velocity_signal.emit(velocities)
+        self.speeds = [0.0, 0.0, 0.0, 0.0]
 
     def SLOT_delta_button(self):
-        delta = self.motor_delta_input.value()
-        self.send_delta_signal.emit([delta])
+        self.pixel_delta = self.motor_delta_input.value()
 
     def SLOT_stage_box(self,index):
-        self.send_stage_signal.emit(index)
-    
-
-# HELPER FUNCTIONS
-
-# convert an opencv image to a QImage
-def cvToQImg(cv_image):
-    height, width, channel = cv_image.shape
-    bytes_per_line = 3 * width
-    return QtGui.QImage(cv_image.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
-
-# rotate a point around another ccw - angle in radians
-def rotate(origin, point, angle):
-
-    dx = point[0] - origin[0]
-    dy = point[1] - origin[1]
-
-    cosa = np.cos(angle)
-    sina = np.sin(angle)
-
-    qx = origin[0] + cosa * (dx) - sina * (dy)
-    qy = origin[1] + sina * (dx) + cosa * (dy)
-    return qx, qy
-
-# IMAGE PROCESSING STAGES
-STAGE_ORIGINAL = 0
-STAGE_MASK = 1
-STAGE_EDGES = 2
-STAGE_LINES = 3
-STAGE_ADJUSTED = 4
-
-
-
-class ROSWorker(QtCore.QThread):
-
-    # PROCESSING VARIABLES
-
-    processing_data_signal = QtCore.pyqtSignal(list)
-
-
-    # CLUE DETECTION VARIABLES
-
-    clue_img_signal = QtCore.pyqtSignal(QtGui.QImage)
-    clue_img = None
-
-    current_clue_cam = 0
-
-
-    # TOP CAMERA VARIABLES
-
-    top_cam_img_signal = QtCore.pyqtSignal(QtGui.QImage)
-    top_cam_data_signal = QtCore.pyqtSignal(list)
-
-    center_target = [64,64]
-    center_delta = [0,0]
-
-    pixel_delta = 0
-
-    pitch_deg = 0.0
-    roll_deg = 0.0
-
-
-    # SIDE CAMERA VARIABLES
-
-    # camera positions:
-    # 0 - front
-    # 1 - back
-    # 2 - left
-    # 3 - right
-
-    # pyQt needs the signals to be class attributes
-    cam0_signal = QtCore.pyqtSignal(QtGui.QImage)
-    cam1_signal = QtCore.pyqtSignal(QtGui.QImage)
-    cam2_signal = QtCore.pyqtSignal(QtGui.QImage)
-    cam3_signal = QtCore.pyqtSignal(QtGui.QImage)
-    cam0_data = QtCore.pyqtSignal(list)
-    cam1_data = QtCore.pyqtSignal(list)
-    cam2_data = QtCore.pyqtSignal(list)
-    cam3_data = QtCore.pyqtSignal(list)
-
-    
-    
-    # normalized vector pointing to each corner, if detected
-    # currently just represents which corner each camera has detected
-    # TODO better way to determine which corner is detected
-    corner_dirs = [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
-
-
-    # for each camera:
-    # pitch_mult,roll_mult,x_mult,y_mult, pitch_rotate
-    # used to change sign of or ignore certain features for certain cameras
-    cam_adjustments = ((2,-2,1,1,False),(-2,2,-1,-1,False),(-2,2,-1,-1,True),(2,2,1,1,True))
-
-    # how much to scale the camera feeds by
-    cam_scale = 0.5 
-
-    # MISC VARIABLES
-    current_stage = STAGE_ADJUSTED
-    time_signal = QtCore.pyqtSignal(list)
+        self.current_stage = index
     
 
 
-    def __init__(self):
-        super().__init__()
-        self.bridge = CvBridge()
-        self.clock_sub = rospy.Subscriber('/clock',Clock,self.clock_callback)
-        self.cam_top_sub = rospy.Subscriber('/B1/camera_top/image_raw', Image, self.top_cam_callback)
-        self.cam0_sub = rospy.Subscriber('/B1/camera0/image_raw', Image, partial(self.cam_callback_generic,cam=0))
-        self.cam1_sub = rospy.Subscriber('/B1/camera1/image_raw', Image, partial(self.cam_callback_generic,cam=1))
-        self.cam2_sub = rospy.Subscriber('/B1/camera2/image_raw', Image, partial(self.cam_callback_generic,cam=2))
-        self.cam3_sub = rospy.Subscriber('/B1/camera3/image_raw', Image, partial(self.cam_callback_generic,cam=3))
-        self.speed_pub = rospy.Publisher('/motor_speed_cmd', MotorSpeed, queue_size=1)
-        self.speeds = [0.0,0.0,0.0,0.0]
-        self.cam_img_signals = (self.cam0_signal,self.cam1_signal,self.cam2_signal,self.cam3_signal)
-        self.cam_data_signals = (self.cam0_data,self.cam1_data,self.cam2_data,self.cam3_data)
-
-        self.current_time = 0
-        self.prev_update_time = 0
-        self.update_rate_hz = 20
-        self.update_period = 1.0 / self.update_rate_hz
-
+    # ROS FUNCTIONS
 
     def clock_callback(self,data):
-        self.current_time = data.clock.secs + data.clock.nsecs / 100000000
-        if self.current_time - self.prev_update_time > self.update_period:
-            self.time_signal.emit([self.current_time,self.prev_update_time])
+        self.current_time = data.clock.secs + data.clock.nsecs / 1000000000  
+        if self.current_time - self.prev_update_time >= self.update_period:
+            self.frame_time_label.setText(f"Frame Time(ms): {(self.current_time - self.prev_update_time)*1000:.1f}")
+            self.time_label.setText(f"Time: {self.current_time:.2f}")
             self.prev_update_time = self.current_time
             self.update()
 
@@ -268,28 +211,6 @@ class ROSWorker(QtCore.QThread):
         ms = MotorSpeed(name=names, velocity=adjusted_vel)
         self.speed_pub.publish(ms)
         # rospy.loginfo(f"PUBLISHING SPEED {self.speeds}")
-
-
-    def run(self): 
-        # rospy.spin()
-        rate = rospy.Rate(100)  # rate in Hz
-
-        while not rospy.is_shutdown():
-
-        #     self.processInputs()
-
-        #     names = ["propeller1", "propeller2", "propeller3", "propeller4"]
-
-        #     motor_delta = self.pixel_delta * self.center_delta[1]
-
-        #     # rospy.loginfo(f"Motor Delta: {motor_delta}")
-
-        #     adjusted_vel = [self.speeds[0] + motor_delta, self.speeds[1], self.speeds[2], self.speeds[3] - motor_delta]
-
-        #     ms = MotorSpeed(name=names, velocity=adjusted_vel)
-        #     self.speed_pub.publish(ms)
-        #     # rospy.loginfo(f"PUBLISHING SPEED {self.speeds}")
-            rate.sleep()
 
     # process data aggregated from cameras
     def processInputs(self):
@@ -314,13 +235,12 @@ class ROSWorker(QtCore.QThread):
             data.extend(Q1.tolist())
             data.extend(Q2.tolist())
             data.extend(Qavg.tolist())
-            self.processing_data_signal.emit(data)
+            self.update_processing_label(data)
 
         # clue detection
         if self.clue_img is not None:
             clue_processed = self.clue_detection(self.clue_img)
-            self.clue_img_signal.emit(cvToQImg(clue_processed))
-
+            self.display_img(clue_processed,self.clue_display)
 
 
     # do all clue detection here
@@ -398,12 +318,8 @@ class ROSWorker(QtCore.QThread):
 
         height, width, _ = cv_image.shape
 
-        offsetx = 0
-        offsety = 0
-        if pitch_rotate:
-            offsety = int(self.roll_deg * 7.41 * pitch_mult * self.cam_scale) # from spreadsheet
-        else:
-            offsety = int(self.pitch_deg * 7.41 * pitch_mult * self.cam_scale)
+        offsetx = 0 # TODO will need to adjust these for roll
+        offsety = int(self.pitch_deg * 7.41 * pitch_mult * self.cam_scale) # from spreadsheet
 
 
         # further processing if both wall edges are detected
@@ -507,7 +423,7 @@ class ROSWorker(QtCore.QThread):
     # cam is the cam number, from 0-3
     def cam_callback_generic(self,msg,cam):
         try:
-            # Convert the ROS image message to an OpenCV image 
+            # Convert the ROS image message to an OpenCV image
             img_full = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
             cv_image = cv.resize(img_full, (0,0), fx=self.cam_scale, fy=self.cam_scale) # scale down camera images
 
@@ -522,13 +438,13 @@ class ROSWorker(QtCore.QThread):
             if self.current_clue_cam == cam:
                 self.clue_img = img_full.copy()
 
-            # emit image signal
-            self.cam_img_signals[cam].emit(cvToQImg(img_final))
+            # display camera image
+            self.display_img(img_final,self.cam_displays[cam])
             
-            # emit data signal
+            # show cam data
             data = [x_int,y_int,offsetx,offsety,angle,theta,phi]
             data.extend(corner_dir)
-            self.cam_data_signals[cam].emit(data)
+            self.cam_data_funcs[cam](data)
 
         except Exception as e:
             print(traceback.format_exc())
@@ -588,7 +504,7 @@ class ROSWorker(QtCore.QThread):
 
             self.center_delta = [row_max - self.center_target[0],col_max - self.center_target[1]]
 
-            self.top_cam_data_signal.emit([row_max,col_max,self.center_delta[0],self.center_delta[1]])
+            self.update_center_label([row_max,col_max,self.center_delta[0],self.center_delta[1]])
             # print(f"Center: {col_max}, {row_max}")
 
             self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
@@ -596,22 +512,12 @@ class ROSWorker(QtCore.QThread):
 
             img_final = mask_rgb
             
-            # Emit signal with QImage
-            self.top_cam_img_signal.emit(cvToQImg(img_final))
+            # show top cam
+            self.display_img(img_final,self.cam_top_display)
 
         except Exception as e:
             print(traceback.format_exc())
 
-
-
-    def send_new_speed(self, data):
-        self.speeds = data
-
-    def set_new_delta(self,data):
-        self.pixel_delta = data[0]
-
-    def set_new_stage(self,data):
-        self.current_stage = data
 
 
 
@@ -626,4 +532,7 @@ if __name__ == "__main__":
 
     gui = Control_Gui()
     gui.show()
-    sys.exit(app.exec_())
+    try:
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(traceback.format_exc())
