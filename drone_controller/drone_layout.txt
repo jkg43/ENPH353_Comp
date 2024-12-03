@@ -64,3 +64,9 @@ corner of north wall and west wall: 6 2.75 0.5
 
 
 with all cams and adjusted mass, power 70.8 is enough to lift
+
+70.697
+
+
+height:
+P=0.1, I = 0.002, D=0.4

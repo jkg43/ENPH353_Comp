@@ -23,7 +23,9 @@ class Control_Gui(QtWidgets.QMainWindow):
 
     send_velocity_signal = QtCore.pyqtSignal(list)
     send_delta_signal = QtCore.pyqtSignal(list)
+    send_delta_signal_2 = QtCore.pyqtSignal(list)
     send_stage_signal = QtCore.pyqtSignal(int)
+    send_target_signal = QtCore.pyqtSignal(list)
 
 
     def __init__(self):
@@ -36,7 +38,9 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.motor_speed_button.clicked.connect(self.SLOT_speed_button)
         self.motor_stop_button.clicked.connect(self.SLOT_stop_button)
         self.motor_delta_button.clicked.connect(self.SLOT_delta_button)
+        self.motor_delta_button_2.clicked.connect(self.SLOT_delta_button_2)
         self.stage_box.currentIndexChanged.connect(self.SLOT_stage_box)
+        self.set_target_button.clicked.connect(self.SLOT_set_target_button)
 
     
         if rosgraph.is_master_online():
@@ -61,7 +65,9 @@ class Control_Gui(QtWidgets.QMainWindow):
 
             self.send_velocity_signal.connect(self.ros_worker.send_new_speed)
             self.send_delta_signal.connect(self.ros_worker.set_new_delta)
+            self.send_delta_signal_2.connect(self.ros_worker.set_hover_pid)
             self.send_stage_signal.connect(self.ros_worker.set_new_stage)
+            self.send_target_signal.connect(self.ros_worker.set_new_target)
 
         else:
             rospy.logwarn("ROS master not running. Skipping ROS worker initialization.")
@@ -122,8 +128,15 @@ class Control_Gui(QtWidgets.QMainWindow):
         delta = self.motor_delta_input.value()
         self.send_delta_signal.emit([delta])
 
+    def SLOT_delta_button_2(self):
+        self.send_delta_signal_2.emit([self.hover_p_input.value(),self.hover_i_input.value(),self.hover_d_input.value()])
+
     def SLOT_stage_box(self,index):
         self.send_stage_signal.emit(index)
+
+    def SLOT_set_target_button(self):
+        self.send_target_signal.emit(
+            [self.target_x_input.value(),self.target_y_input.value(),self.target_z_input.value()])
     
 
 # HELPER FUNCTIONS
@@ -147,6 +160,59 @@ def rotate(origin, point, angle):
     qy = origin[1] + sina * (dx) + cosa * (dy)
     return qx, qy
 
+# find the closest intersection of 2 lines
+# inputs are numpy arrays
+# returns results as lists
+def intersectLines(p1,d1,p2,d2):
+    d3 = np.cross(d1,d2)
+
+    A = np.array([d1, -d2, d3]).T
+    b = p2 - p1
+
+    if det(A) != 0: # A needs to be non singular (invertible)
+        t = solve(A,b)
+
+        Q1 = p1 + d1 * t[0]
+        Q2 = p2 + d2 * t[1]
+        Qavg = (Q1+Q2) / 2
+        return Qavg.tolist(),Q1.tolist(),Q2.tolist()
+    return None, None, None
+
+# intersect a line of for p + d*t with a plane of form a=a0,
+#   where a=x,y,z and axis is the corresponding index 0,1,2
+# p and d are numpy arrays
+# returns results as a list
+def intersectLineAndPlane(p,d,a0,axis):
+    t = (a0-p[axis]) / d[axis]
+    intersection = p + d * t
+    return intersection.tolist()
+
+
+
+class PIDControl:
+    def __init__(self,Kp,Ki,Kd,dt):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.dt = dt
+        self.prev_error = 0
+        self.integral = 0
+
+    def compute(self,target,predicted_value):
+        error = target - predicted_value
+        P = self.Kp * error
+        self.integral += error * self.dt
+        I = self.Ki * self.integral
+        derivative = (error - self.prev_error) / self.dt
+        D = self.Kd * derivative
+        self.prev_error = error
+        # print(f"E: {error}, P: {P}, I: {I}, D: {D}, int: {self.integral}")
+        return P + I + D
+    
+    def setParams(self,params):
+        self.Kp, self.Ki, self.Kd = params
+
+
 # IMAGE PROCESSING STAGES
 STAGE_ORIGINAL = 0
 STAGE_MASK = 1
@@ -161,6 +227,12 @@ class ROSWorker(QtCore.QThread):
     # PROCESSING VARIABLES
 
     processing_data_signal = QtCore.pyqtSignal(list)
+
+    # MISC VARIABLES
+    current_stage = STAGE_ADJUSTED
+    update_rate_hz = 20
+    update_period = 1.0 / update_rate_hz
+    time_signal = QtCore.pyqtSignal(list)
 
 
     # CLUE DETECTION VARIABLES
@@ -217,11 +289,41 @@ class ROSWorker(QtCore.QThread):
     cam_adjustments = ((2,-2,1,1,False),(-2,2,-1,-1,False),(-2,2,-1,-1,True),(2,2,1,1,True))
 
     # how much to scale the camera feeds by
-    cam_scale = 0.5 
+    cam_scale = 0.5
 
-    # MISC VARIABLES
-    current_stage = STAGE_ADJUSTED
-    time_signal = QtCore.pyqtSignal(list)
+
+    # MOVEMENT VARIABLES
+
+    target_pos = [5.5,0,0.2]
+
+    predicted_pos = None
+
+    moving_y_axis = True # y axis is default foward direction
+
+    # all motors at this speed keeps the drone at constant height if there is no initial momentum
+    hover_speed = 70.689
+
+    hover_p = 0.1
+    hover_i = 0.002
+    hover_d = 0.4
+    hover_integral = 0
+
+    hoverPID = PIDControl(0.1,0.002,0.4,update_period)
+    movePID = PIDControl(0,0,0,update_period)
+    tiltPID = PIDControl(0,0,0,update_period)
+
+
+
+
+
+    prev_pos = None
+
+    # how close the height should be to the target height before moving
+    height_delta = 0.05
+    
+
+
+
     
 
 
@@ -241,12 +343,16 @@ class ROSWorker(QtCore.QThread):
 
         self.current_time = 0
         self.prev_update_time = 0
-        self.update_rate_hz = 20
-        self.update_period = 1.0 / self.update_rate_hz
 
+
+    di=0
 
     def clock_callback(self,data):
-        self.current_time = data.clock.secs + data.clock.nsecs / 100000000
+        self.current_time = (data.clock.nsecs / 1000000000.0) + data.clock.secs
+
+        # print(f"clock: {self.di}, {self.current_time}, {data.clock.secs}, {(data.clock.nsecs / 1000000000.0)}, {data.clock.nsecs}")
+        self.di += 1
+
         if self.current_time - self.prev_update_time > self.update_period:
             self.time_signal.emit([self.current_time,self.prev_update_time])
             self.prev_update_time = self.current_time
@@ -259,15 +365,32 @@ class ROSWorker(QtCore.QThread):
 
         names = ["propeller1", "propeller2", "propeller3", "propeller4"]
 
-        motor_delta = self.pixel_delta * self.center_delta[1]
+        base_speed = self.hover_speed
+        motor_delta_x = 0
+        motor_delta_y = 0
 
-        # rospy.loginfo(f"Motor Delta: {motor_delta}")
+        if self.predicted_pos is not None and self.prev_pos is not None:
 
-        adjusted_vel = [self.speeds[0] + motor_delta, self.speeds[1], self.speeds[2], self.speeds[3] - motor_delta]
+
+            base_speed += self.hoverPID.compute(self.target_pos[2],self.predicted_pos[2])
+
+            # if self.moving_y_axis:
+            #     motor_delta_y = self.movePID.compute(self.target_pos[1],self.predicted_pos[1])
+
+
+        self.prev_pos = None if self.predicted_pos is None else self.predicted_pos
+
+        # adjusted_vel = [self.speeds[0] + motor_delta_x, self.speeds[1], self.speeds[2], self.speeds[3] - motor_delta_x]
+
+        adjusted_vel = [
+            base_speed + motor_delta_y - motor_delta_x,
+            -(base_speed - motor_delta_y - motor_delta_x),
+            base_speed - motor_delta_y + motor_delta_x,
+            -(base_speed + motor_delta_y + motor_delta_x)
+            ]
 
         ms = MotorSpeed(name=names, velocity=adjusted_vel)
         self.speed_pub.publish(ms)
-        # rospy.loginfo(f"PUBLISHING SPEED {self.speeds}")
 
 
     def run(self): 
@@ -298,23 +421,40 @@ class ROSWorker(QtCore.QThread):
         d1 = np.array(self.corner_dirs[0])
         d2 = np.array(self.corner_dirs[1])
 
-        d3 = np.cross(d1,d2)
+        l1_exists = not all(i==0 for i in d1)
+        l2_exists = not all(i==0 for i in d2)
 
-        A = np.array([d1, -d2, d3]).T
-        b = p2 - p1
+        assumption_value = 5.5
+        assumption_axis = 0
 
-        if det(A) != 0: # A needs to be non singular (invertible)
-            t = solve(A,b)
 
-            Q1 = p1 + d1 * t[0]
-            Q2 = p2 + d2 * t[1]
-            Qavg = (Q1+Q2) / 2
+        data = []
+        if l1_exists and l2_exists:
+            Qavg, Q1, Q2 = intersectLines(p1,d1,p2,d2)
 
-            data = []
-            data.extend(Q1.tolist())
-            data.extend(Q2.tolist())
-            data.extend(Qavg.tolist())
-            self.processing_data_signal.emit(data)
+            self.predicted_pos = Qavg
+            if Qavg is not None:
+                data.extend(Q1)
+                data.extend(Q2)
+                data.extend(Qavg)
+                
+        elif l1_exists:
+            intersection = intersectLineAndPlane(p1,d1,assumption_value,assumption_axis)
+            self.predicted_pos = intersection
+            data = [0,0,0,0,0,0]
+            data.extend(intersection)
+        elif l2_exists:
+            intersection = intersectLineAndPlane(p2,d2,assumption_value,assumption_axis)
+            self.predicted_pos = intersection
+            data = [0,0,0,0,0,0]
+            data.extend(intersection)
+        else:
+            self.predicted_pos = None
+            data = [0,0,0,0,0,0,0,0,0]
+
+
+        self.processing_data_signal.emit(data)
+
 
         # clue detection
         if self.clue_img is not None:
@@ -535,6 +675,7 @@ class ROSWorker(QtCore.QThread):
 
 
     def top_cam_callback(self, msg):
+
         try:
             # Convert the ROS image message to an OpenCV image (cv::Mat)
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8') # 64x64
@@ -609,9 +750,15 @@ class ROSWorker(QtCore.QThread):
 
     def set_new_delta(self,data):
         self.pixel_delta = data[0]
+        
+    def set_hover_pid(self,data):
+        self.hover_p, self.hover_i, self.hover_d = data
 
     def set_new_stage(self,data):
         self.current_stage = data
+
+    def set_new_target(self,data):
+        self.target_pos = data
 
 
 
