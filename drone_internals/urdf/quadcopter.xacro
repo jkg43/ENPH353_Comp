@@ -161,9 +161,9 @@
   <xacro:arm i="4"/>
  
   <xacro:propeller i="1" mat="Gazebo/RedTransparent"/>
-  <xacro:propeller i="2" mat="Gazebo/RedTransparent"/>
+  <xacro:propeller i="2" mat="Gazebo/BlueTransparent"/>
   <xacro:propeller i="3" mat="Gazebo/BlueTransparent"/>
-  <xacro:propeller i="4" mat="Gazebo/BlueTransparent"/>
+  <xacro:propeller i="4" mat="Gazebo/RedTransparent"/>
 
 
   <!-- cameras -->
