@@ -20,6 +20,268 @@ from rosgraph_msgs.msg import Clock
 from drone_internals.msg import MotorSpeed
 from cv_bridge import CvBridge
 
+from homography import HomographyProcessor
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtGui import QPalette
+from PyQt5.QtCore import Qt
+from python_qt_binding import loadUi
+import traceback
+from functools import partial
+
+import os
+import cv2 as cv
+import sys
+import numpy as np
+from numpy.linalg import solve, norm, det
+import math
+import rospy
+import rosgraph
+
+from sensor_msgs.msg import Image
+from rosgraph_msgs.msg import Clock
+from drone_internals.msg import MotorSpeed
+from cv_bridge import CvBridge, CvBridgeError
+import cv2
+
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from std_msgs.msg import String
+
+
+model = None
+sess = None
+graph = None
+bridge = CvBridge()
+
+# Define the HSV range
+lower_hsv = np.array([113, 113, 44])
+upper_hsv = np.array([167, 255, 255])
+character_set = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6','7','8','9',' ']
+
+clue_type_to_location = {
+    "SIZE": 1,
+    "VICTIM": 2,
+    "CRIME": 3,
+    "TIME": 4,
+    "PLACE": 5,
+    "MOTIVE": 6,
+    "WEAPON": 7,
+    "BANDIT": 8
+}
+
+def load_nn_model(model_path):
+    global model, sess, graph
+    tf.compat.v1.disable_eager_execution()
+    sess = tf.compat.v1.Session()
+    graph = tf.compat.v1.get_default_graph()
+    with graph.as_default():
+        tf.compat.v1.keras.backend.set_session(sess)
+        model = load_model(model_path)
+
+def preprocess_patch(patch):
+    patch = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+    patch = cv2.resize(patch, (32, 32), interpolation=cv2.INTER_LINEAR)  # Resize
+    patch = np.expand_dims(patch, axis=(0, -1))  # Add batch and channel dimensions
+    patch = patch / 255.0  # Normalize
+    return patch
+
+def predict_character(patch):
+    global model, sess, graph
+    patch = preprocess_patch(patch)
+    with graph.as_default():
+        tf.compat.v1.keras.backend.set_session(sess)
+        predictions = model.predict(patch)
+
+    predicted_index = np.argmax(predictions)
+    predicted_char = character_set[predicted_index]
+    return predicted_char
+
+def publish_clue(clue_location, clue_prediction):
+
+    pub = rospy.Publisher('/score_tracker', String, queue_size=10)
+    team_id = "teamsix"
+    team_password = "password"
+
+    # # Validate inputs
+    # if not (-1 <= clue_location <= 8):
+    #     rospy.logerr("Invalid clue_location. Must be between -1 and 8.")
+    #     return
+    # if not (clue_prediction.isupper() and ' ' not in clue_prediction):
+    #     rospy.logerr("Invalid clue_prediction. Must be uppercase, no spaces.")
+    #     return
+
+    # Create and publish the message
+    message = f"{team_id},{team_password},{clue_location},{clue_prediction}"
+    pub.publish(message)
+    rospy.loginfo(f"Published message: {message}")
+
+def image_callback(msg):
+    global model
+    try:
+        # Convert the ROS Image message to OpenCV format
+        # frame = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+        frame = cv.cvtColor(msg,cv.COLOR_RGB2BGR)
+
+        # Step 1: Convert the frame to HSV
+        hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        # Step 2: Apply the HSV threshold to get the mask
+        mask = cv2.inRange(hsv_frame, lower_hsv, upper_hsv)
+
+        # cv2.imshow("Thresholded Mask", mask)  # Thresholded mask (with white regions)
+
+        # Step 3: Find contours in the mask
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Step 4: If contours are found, find the largest one
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+
+            # Approximate the contour to a polygon
+            epsilon = 0.02 * cv2.arcLength(largest_contour, True)
+            approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+
+            # Check if the approximated contour has 4 points (rectangular)
+            if len(approx) == 4:
+                # Extract the points of the rectangle
+                points = approx.reshape(4, 2)
+
+                # Sort points to ensure proper order: top-left, top-right, bottom-right, bottom-left
+                rect = order_points(points)
+
+                # Define the width and height of the desired rectangle
+                width = 350
+                height = 200
+                dst_rect = np.array([
+                    [0, 0],
+                    [width - 1, 0],
+                    [width - 1, height - 1],
+                    [0, height - 1]
+                ], dtype="float32")
+
+                # Compute the perspective transform matrix
+                M = cv2.getPerspectiveTransform(rect, dst_rect)
+
+                # Warp the perspective to get a top-down view
+                transformed = cv2.warpPerspective(frame, M, (width, height))
+
+                # Show the full transformed clue board
+                # cv2.imshow("Full Transformed Clue Board", transformed)
+
+                # Step 1: Convert the transformed frame to HSV
+                hsv_frame2 = cv2.cvtColor(transformed, cv2.COLOR_BGR2HSV)
+
+                # Step 2: Apply the HSV threshold to get the mask
+                mask2 = cv2.inRange(hsv_frame2, lower_hsv, upper_hsv)
+
+                # Step 3: Invert the mask to get the areas that are not in the HSV range
+                mask2 = cv2.bitwise_not(mask2)
+
+                # Step 4: Find contours in the inverse mask
+                contours2, _ = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                # Step 4: If contours are found, find the largest one
+                if contours2:
+                    largest_contour2 = max(contours2, key=cv2.contourArea)
+
+                    # Approximate the contour to a polygon
+                    epsilon2 = 0.02 * cv2.arcLength(largest_contour2, True)
+                    approx2 = cv2.approxPolyDP(largest_contour2, epsilon2, True)
+
+                    # Check if the approximated contour has 4 points (rectangular)
+                    if len(approx2) == 4:
+                        # Extract the points of the rectangle
+                        points2 = approx2.reshape(4, 2)
+
+                        # Sort points to ensure proper order: top-left, top-right, bottom-right, bottom-left
+                        rect2 = order_points(points2)
+
+                        # Compute the perspective transform matrix
+                        M2 = cv2.getPerspectiveTransform(rect2, dst_rect)
+
+                        # Warp the perspective to get a top-down view
+                        transformed2 = cv2.warpPerspective(transformed, M2, (width, height))
+
+                        # Show the full transformed clue board
+                        # cv2.imshow("Ideal Transformed Clue Board", transformed2)
+
+                        # Debug: Show the original mask and inverted mask
+                        # cv2.imshow("Original Mask", mask)
+                        # cv2.imshow("Inverted Mask", mask2)
+
+                        cv2.waitKey(1)
+
+                        # Define more specific points for the bottom rectangle and top-right rectangle
+                        # Adjust these points based on your requirements
+                        bottom_rect_top_left = (13, 110)  # Bottom rectangle starting point
+                        bottom_rect_bottom_right = (338, 180)  # Bottom rectangle ending point
+                        top_right_rect_top_left = (145, 5)  # Top-right rectangle starting point
+                        top_right_rect_bottom_right = (335, 70)  # Top-right rectangle ending point
+
+                        # Crop the bottom rectangle using the specific points
+                        bottom_rect = transformed2[bottom_rect_top_left[1]:bottom_rect_bottom_right[1],
+                                                bottom_rect_top_left[0]:bottom_rect_bottom_right[0]]
+                        # cv2.imshow("Bottom Rectangle", bottom_rect)
+
+                        # Crop the top-right rectangle using the specific points
+                        top_right_rect = transformed2[top_right_rect_top_left[1]:top_right_rect_bottom_right[1],
+                                                    top_right_rect_top_left[0]:top_right_rect_bottom_right[0]]
+                        # cv2.imshow("Top Right Rectangle", top_right_rect)
+
+                        # Now, cut both top and bottom rectangles into smaller images
+
+                        # Define the x-offset and number of smaller images for top and bottom rectangles
+                        top_x_offset = 0  # Starting point offset for top rectangle cuts
+                        top_width = top_right_rect.shape[1] // 7  # Number of smaller images for top
+                        bottom_x_offset = 0  # Starting point offset for bottom rectangle cuts
+                        bottom_width = bottom_rect.shape[1] // 12  # Number of smaller images for bottom
+
+                        clue_type_imgs = []
+                        # Cut and show the top rectangle into 7 smaller images
+                        for i in range(7):
+                            top_img = top_right_rect[
+                                :, top_x_offset + i*top_width : top_x_offset + (i+1)*top_width
+                            ]
+                            # cv2.imshow(f"top_img{i+1}", top_img)
+                            clue_type_imgs.append(top_img)
+
+                        clue_val_imgs = []
+                        # Cut and show the bottom rectangle into 12 smaller images
+                        for i in range(12):
+                            bottom_img = bottom_rect[
+                                :, bottom_x_offset + i*bottom_width : bottom_x_offset + (i+1)*bottom_width
+                            ]
+                            # cv2.imshow(f"bottom_img{i+1}", bottom_img)
+                            clue_val_imgs.append(bottom_img)
+
+                        clue_type = ''.join([predict_character(img) for img in clue_type_imgs]).replace(" ", "")
+                        clue_val = ''.join([predict_character(img) for img in clue_val_imgs]).replace(" ", "")
+                        clue_location = clue_type_to_location.get(clue_type, 1)
+
+                        rospy.loginfo(f"Clue Type: {clue_type}")
+                        rospy.loginfo(f"Clue Value: {clue_val}")
+
+                        publish_clue(clue_location=clue_location, clue_prediction=clue_val)
+
+    except CvBridgeError as e:
+        rospy.logerr(f"Error converting image: {e}")
+
+def order_points(pts):
+    """
+    Sort the points in clockwise order: top-left, top-right, bottom-right, bottom-left.
+    """
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]  # Top-left
+    rect[2] = pts[np.argmax(s)]  # Bottom-right
+
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]  # Top-right
+    rect[3] = pts[np.argmax(diff)]  # Bottom-left
+
+    return rect
 
 class Control_Gui(QtWidgets.QMainWindow):
 
@@ -32,6 +294,7 @@ class Control_Gui(QtWidgets.QMainWindow):
     send_target_angles_signal = QtCore.pyqtSignal(list)
     send_start_signal = QtCore.pyqtSignal(int)
     send_stop_signal = QtCore.pyqtSignal(int)
+    send_clue_signal = QtCore.pyqtSignal(int)
 
     def __init__(self):
 
@@ -83,6 +346,8 @@ class Control_Gui(QtWidgets.QMainWindow):
             self.send_target_angles_signal.connect(self.ros_worker.set_new_target_angles)
             self.send_start_signal.connect(self.ros_worker.start_signal)
             self.send_stop_signal.connect(self.ros_worker.stop_signal)
+
+            self.send_clue_signal.connect(self.ros_worker.process_clue)
 
             self.ros_worker.set_pid_index(0)
 
@@ -151,8 +416,9 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.send_velocity_signal.emit(velocities)
     
     def SLOT_motor_stop_button(self):
-        velocities = [0.0, 0.0, 0.0, 0.0]
-        self.send_velocity_signal.emit(velocities)
+        # velocities = [0.0, 0.0, 0.0, 0.0]
+        # self.send_velocity_signal.emit(velocities)
+        self.send_clue_signal.emit(1)
 
     def SLOT_delta_button(self):
         delta = self.motor_delta_input.value()
@@ -305,6 +571,8 @@ class ROSWorker(QtCore.QThread):
 
     current_clue_cam = 0
 
+    clue_processor = HomographyProcessor()
+
 
     # TOP CAMERA VARIABLES
 
@@ -376,14 +644,14 @@ class ROSWorker(QtCore.QThread):
     # hoverPID = PIDControl(0.1,0.002,0.4,update_period)
     hoverPID = PIDControl(0.1,0,0.4,update_period)
     # tiltPID = PIDControl(0.002,0,0.002,update_period)
-    # tilt_p,tilt_i,tilt_d = 0.0025, 0, 0.002
-    tilt_p,tilt_i,tilt_d = 0.0008, 0, 0.0008
+    tilt_p,tilt_i,tilt_d = 0.0025, 0, 0.002
+    # tilt_p,tilt_i,tilt_d = 0.0008, 0, 0.0008
     # tilt_p,tilt_i,tilt_d = tilt_mult, tilt_add, 0.002
     pitchPID = PIDControl(tilt_p,tilt_i,tilt_d,update_period)
     rollPID = PIDControl(tilt_p,tilt_i,tilt_d,update_period)
     # movePID = PIDControl(0,0,0,update_period)
-    # move_p,move_i,move_d = 0.95,0,1.2
-    move_p,move_i,move_d = 0.00125,0.00001,0.0049
+    move_p,move_i,move_d = 0.95,0,1.2
+    # move_p,move_i,move_d = 0.00125,0.00001,0.0049
     xPID = PIDControl(move_p,move_i,move_d,update_period)
     yPID = PIDControl(move_p,move_i,move_d,update_period)
 
@@ -411,9 +679,13 @@ class ROSWorker(QtCore.QThread):
 
     # start at 5.5, 2.5, 0.125
     waypoints = [
-        # (x,y,z), movement axis, assumption
-        ((5.5,0.5,0.2),1,5.5),
-        ((5.5,0.5,0.5),1,5.5),
+        # (x,y,z), movement axis, assumption, assumption axis, clue cam
+        # ((5.5,3.0,0.1),1,5.5,0),
+        ((5.5,-0.8,0.2),1,5.5,0,0),
+        ((5.5,-1.37,0.2),1,5.5,0,0),
+        ((5.5,-1.37,0.4),2,-1.37,1,0),
+        ((4.5,-1.37,0.4),0,-1.37,1,3),
+        
     ]
     
     current_waypoint_index = 0
@@ -425,6 +697,12 @@ class ROSWorker(QtCore.QThread):
     waypoint_time = 0
 
     waypoint_counter = 0
+
+    stopped = False
+
+    wait_time = 5
+
+    prev_waypoint_stop_time = 0
 
 
     def __init__(self):
@@ -446,9 +724,11 @@ class ROSWorker(QtCore.QThread):
         self.cam2_sub = rospy.Subscriber('/B1/camera2/image_raw', Image, partial(self.cam_callback_generic,cam=2))
         self.cam3_sub = rospy.Subscriber('/B1/camera3/image_raw', Image, partial(self.cam_callback_generic,cam=3))
         self.speed_pub = rospy.Publisher('/motor_speed_cmd', MotorSpeed, queue_size=1)
+        self.score_pub = rospy.Publisher('/score_tracker',String,queue_size=5)
 
+        load_nn_model(os.path.expanduser('~/ros_ws/nn/model_biggest.keras'))
 
-
+    start_time = 0
 
     def clock_callback(self,data):
         self.current_time = (data.clock.nsecs / 1000000000.0) + data.clock.secs
@@ -456,16 +736,45 @@ class ROSWorker(QtCore.QThread):
         # print(f"clock: {self.di}, {self.current_time}, {data.clock.secs}, {(data.clock.nsecs / 1000000000.0)}, {data.clock.nsecs}")
 
         if self.current_time - self.prev_update_time > self.update_period:
-            self.time_signal.emit([self.current_time,self.prev_update_time])
+            self.time_signal.emit([self.current_time - self.start_time,self.prev_update_time - self.start_time])
             self.prev_update_time = self.current_time
             if self.running:
                 self.update()
 
-
+    detected_first_clue = False
+    stopped_first_clue = False
 
     def update(self):
+
+
+        if self.current_time - self.start_time > 9 and self.current_time - self.prev_waypoint_stop_time > self.wait_time and self.stopped:
+            self.stopped = False
+            self.set_waypoint
+            self.process_clue(self.clue_img)
+
+        if self.stopped:
+            self.stop_motors()
+            return
+
+        if self.current_time - self.start_time > 3.5 and not self.stopped_first_clue:
+            self.stopped_first_clue = True
+            self.stopped = True
+            self.stop_motors()
+
+        if self.current_time - self.start_time > 8.5 and not self.detected_first_clue:
+            self.stopped = False
+            self.detected_first_clue = True
+            self.process_clue(self.clue_img)
+        
+
+        # if self.current_time - self.start_time > 3.5 and not self.stopped_first_clue:
+        #     self.process_clue(self.clue_img)
+        #     self.stopped_first_clue = True
+
+
         self.processInputs()
    
+
 
         base_speed = self.hover_speed
         motor_delta_x = 0
@@ -473,21 +782,25 @@ class ROSWorker(QtCore.QThread):
 
         if self.predicted_pos is not None and self.prev_pos is not None:
 
-            all_close = True
-            for a, b in zip(self.predicted_pos, self.target_pos):
-                if abs(a - b) > self.waypoint_distance:
-                    all_close = False
+            # all_close = True
+            # for a, b in zip(self.predicted_pos, self.target_pos):
+            #     if abs(a - b) > self.waypoint_distance:
+            #         all_close = False
+
+            all_close = abs(self.predicted_pos[self.moving_axis]-self.target_pos[self.moving_axis]) < self.waypoint_distance
 
             if all_close and self.current_waypoint_index != len(self.waypoints):
-                
-                self.waypoint_counter += 1
 
-                if self.waypoint_counter > self.waypoint_time:
-                    self.waypoint_counter = 0
-                    print(f"Reached waypoint {self.current_waypoint_index}")
-                    self.current_waypoint_index += 1
-                    if self.current_waypoint_index < len(self.waypoints):
-                        self.set_waypoint()
+                print(f"Reached waypoint {self.current_waypoint_index}")
+                self.prev_waypoint_stop_time = self.current_time
+                if self.moving_axis != 2:
+                    self.stopped = True
+                    self.stop_motors()
+                    self.process_clue(self.clue_img)
+                self.current_waypoint_index += 1
+                if self.current_waypoint_index < len(self.waypoints):
+                    self.set_waypoint()
+                return
 
 
             hover_amount = self.hoverPID.compute(self.target_pos[2],self.predicted_pos[2])
@@ -514,17 +827,16 @@ class ROSWorker(QtCore.QThread):
             self.target_pitch = 0
             self.target_roll = 0
 
-            # if at_height:
+            if at_height:
 
-                # if self.moving_axis == 0:
-                #     self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.5,0.5)
-                #     if not self.using_assumption:
-                #         self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-0.25,0.25)
-                # elif self.moving_axis == 1:
-                #     self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-50,50) # TEMP, should be 0.5
-                #     if not self.using_assumption:
-                #         self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.25,0.25)
-                        # self.target_roll = clamp(self.predicted_pos[0]-self.target_pos[0],-0.25,0.25)
+                if self.moving_axis == 0:
+                    self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.5,0.5)
+                    # if not self.using_assumption:
+                    #     self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-0.25,0.25)
+                elif self.moving_axis == 1:
+                    self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-0.5,0.5)
+                    # if not self.using_assumption:
+                    #     self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.25,0.25)
 
             # if np.abs(self.target_pos[0] - self.predicted_pos[0]) < self.pos_deadzone:
             #     self.target_roll = 0
@@ -534,50 +846,53 @@ class ROSWorker(QtCore.QThread):
             #     print("Y")
 
 
-            # if self.moving_axis == 0:
-            #     motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
-            #     if not self.using_assumption:
-            #         motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
-            # elif self.moving_axis == 1:
-            #     motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
-            #     if not self.using_assumption:
-            #         motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
-
-
-            # motor_delta_x = -self.rollPID.compute(target_r,self.roll_deg)
-            # motor_delta_y =  -self.pitchPID.compute(target_p,self.pitch_deg)
-
-            motor_delta_x = self.xPID.compute(self.target_pos[0],self.predicted_pos[0])
-            motor_delta_y = self.yPID.compute(self.target_pos[1],self.predicted_pos[1])
-            # print(f"Y: Target: {self.target_pos[1]}, Pred: {self.predicted_pos[1]}, DY: {self.target_pos[1]-self.predicted_pos[1]}")
-
-            self.del_x = motor_delta_x
-            self.del_y = motor_delta_y
-
-            # if self.pitch_deg > 0.5:
-            #     motor_delta_y = 0
-
-            # if self.roll_deg > 0.5:
-            #     motor_delta_x = 0
-            
-            motor_delta_x /= (1+np.abs(self.roll_deg*self.tilt_mult))
-            motor_delta_y /= (1+np.abs(self.pitch_deg*self.tilt_mult))
-            
-            dx = self.target_pos[0] - self.predicted_pos[0]
-            dy = self.target_pos[1] - self.predicted_pos[1]
-
-            t1 = 1
-            t2 = 0.25
-
             if self.moving_axis == 0:
-                self.target_roll = clamp(-0.5 * dx,-t1,t1)
-                self.target_pitch = clamp(-0.5 * dy,-t2,t2)
+                motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
+                # if not self.using_assumption:
+                #     motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
             elif self.moving_axis == 1:
-                self.target_pitch = clamp(-0.5 * dy,-t1,t1)
-                self.target_roll = clamp(-0.5 * dx,-t2,t2)
+                motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+                # if not self.using_assumption:
+                #     motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
 
-            motor_delta_x -= np.abs(self.roll_deg) * self.rollPID.compute(self.target_roll,self.roll_deg)
-            motor_delta_y -= np.abs(self.pitch_deg) * self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+
+            # motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
+            # motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+
+
+        # V2
+
+            # motor_delta_x = self.xPID.compute(self.target_pos[0],self.predicted_pos[0])
+            # motor_delta_y = self.yPID.compute(self.target_pos[1],self.predicted_pos[1])
+            # # print(f"Y: Target: {self.target_pos[1]}, Pred: {self.predicted_pos[1]}, DY: {self.target_pos[1]-self.predicted_pos[1]}")
+
+            # self.del_x = motor_delta_x
+            # self.del_y = motor_delta_y
+
+            # # if self.pitch_deg > 0.5:
+            # #     motor_delta_y = 0
+
+            # # if self.roll_deg > 0.5:
+            # #     motor_delta_x = 0
+            
+            # motor_delta_x /= (1+np.abs(self.roll_deg*self.tilt_mult))
+            # motor_delta_y /= (1+np.abs(self.pitch_deg*self.tilt_mult))
+            
+            # dx = self.target_pos[0] - self.predicted_pos[0]
+            # dy = self.target_pos[1] - self.predicted_pos[1]
+
+            # t1 = 1
+            # t2 = 0.25
+
+            # if self.moving_axis == 0:
+            #     self.target_roll = clamp(-0.5 * dx,-t1,t1)
+            #     self.target_pitch = clamp(-0.5 * dy,-t2,t2)
+            # elif self.moving_axis == 1:
+            #     self.target_pitch = clamp(-0.5 * dy,-t1,t1)
+            #     self.target_roll = clamp(-0.5 * dx,-t2,t2)
+
+            # motor_delta_x -= np.abs(self.roll_deg) * self.rollPID.compute(self.target_roll,self.roll_deg)
+            # motor_delta_y -= np.abs(self.pitch_deg) * self.pitchPID.compute(self.target_pitch,self.pitch_deg)
             
 
 
@@ -627,7 +942,7 @@ class ROSWorker(QtCore.QThread):
         l2_exists = not all(i==0 for i in d2)
 
         assumption_value = self.current_assumption
-        assumption_axis = 0
+        assumption_axis = self.assumption_axis
 
         previously_using_assumption = self.using_assumption
 
@@ -677,20 +992,6 @@ class ROSWorker(QtCore.QThread):
         self.processing_data_signal.emit(data)
 
 
-        # clue detection
-        if self.clue_img is not None:
-            clue_processed = self.clue_detection(self.clue_img)
-            self.clue_img_signal.emit(cvToQImg(clue_processed))
-
-
-
-    # do all clue detection here
-    def clue_detection(self,img):
-
-        cv.circle(img,(100,100),20,(255,255,0),2)
-
-
-        return img # return processed image
 
 
     def detect_corner(self,img,adjustments):
@@ -747,7 +1048,8 @@ class ROSWorker(QtCore.QThread):
 
 
 
-        mask = cv.bitwise_and(cv.bitwise_not(mask2),mask3)
+        # mask = cv.bitwise_and(cv.bitwise_not(mask2),mask3)
+        mask = mask3
         # mask = mask1
 
         edges = cv.Canny(mask,100,200)
@@ -1059,19 +1361,31 @@ class ROSWorker(QtCore.QThread):
     def set_new_target_angles(self,data):
         self.target_pitch, self.target_roll = data
 
+    started = False
+
     def start_signal(self,data):
-        if data != 0 and not self.running:
+        self.stopped = False
+        if not self.started:
+            self.score_pub.publish('teamsix,password,0,NA') # start timer
+            self.started = True
+            self.start_time = self.current_time
+        if not self.running:
             self.running = True
             # print("Starting")
 
     def stop_signal(self,data):
         if data != 0:
-            # print("Stopping")
-            self.reset_PID()
-            self.pub_vel([0,0,0,0])
+            print("Stopping")
+            self.stop_motors()
+            self.running = False
             self.current_waypoint_index = 0
             self.set_waypoint()
-            self.running = False
+            self.score_pub.publish('teamsix,password,-1,NA') #stop timer
+
+    def stop_motors(self):
+        self.reset_PID()
+        self.pub_vel([0,0,0,0])
+        
 
     def reset_PID(self):
         self.pitchPID.reset()
@@ -1081,7 +1395,13 @@ class ROSWorker(QtCore.QThread):
         self.yPID.reset()
 
     def set_waypoint(self):
-        self.target_pos, self.moving_axis, self.current_assumption = self.waypoints[self.current_waypoint_index]
+        self.target_pos, self.moving_axis, self.current_assumption, self.assumption_axis, self.current_clue_cam = self.waypoints[self.current_waypoint_index]
+
+    def process_clue(self,data):
+        print("CLUE")
+        if self.clue_img is not None:
+            print("YES")
+            image_callback(self.clue_img)
 
 
 

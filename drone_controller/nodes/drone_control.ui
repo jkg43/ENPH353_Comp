@@ -71,14 +71,14 @@
    <widget class="QPushButton" name="motor_stop_button">
     <property name="geometry">
      <rect>
-      <x>190</x>
-      <y>570</y>
+      <x>1010</x>
+      <y>360</y>
       <width>80</width>
       <height>25</height>
      </rect>
     </property>
     <property name="text">
-     <string>Stop Motors</string>
+     <string>Detect Clue</string>
     </property>
    </widget>
    <widget class="QDoubleSpinBox" name="back_speed_input">
