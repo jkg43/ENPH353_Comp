@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtGui import QPalette
+from PyQt5.QtCore import Qt
 from python_qt_binding import loadUi
 import traceback
 from functools import partial
@@ -23,10 +25,13 @@ class Control_Gui(QtWidgets.QMainWindow):
 
     send_velocity_signal = QtCore.pyqtSignal(list)
     send_delta_signal = QtCore.pyqtSignal(list)
-    send_delta_signal_2 = QtCore.pyqtSignal(list)
+    send_pid_signal = QtCore.pyqtSignal(list)
     send_stage_signal = QtCore.pyqtSignal(int)
+    send_pid_index_signal = QtCore.pyqtSignal(int)
     send_target_signal = QtCore.pyqtSignal(list)
-
+    send_target_angles_signal = QtCore.pyqtSignal(list)
+    send_start_signal = QtCore.pyqtSignal(int)
+    send_stop_signal = QtCore.pyqtSignal(int)
 
     def __init__(self):
 
@@ -36,11 +41,16 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.setWindowTitle("Drone Control Panel")
 
         self.motor_speed_button.clicked.connect(self.SLOT_speed_button)
-        self.motor_stop_button.clicked.connect(self.SLOT_stop_button)
-        self.motor_delta_button.clicked.connect(self.SLOT_delta_button)
-        self.motor_delta_button_2.clicked.connect(self.SLOT_delta_button_2)
-        self.stage_box.currentIndexChanged.connect(self.SLOT_stage_box)
+        self.motor_stop_button.clicked.connect(self.SLOT_motor_stop_button)
+        # self.motor_delta_button.clicked.connect(self.SLOT_delta_button)
+        self.pid_button.clicked.connect(self.SLOT_pid_button)
         self.set_target_button.clicked.connect(self.SLOT_set_target_button)
+        self.set_target_angles_button.clicked.connect(self.SLOT_set_target_angles)
+        self.start_button.clicked.connect(self.SLOT_start_button)
+        self.stop_button.clicked.connect(self.SLOT_stop_button)
+
+        self.stage_box.currentIndexChanged.connect(self.SLOT_stage_box)
+        self.pid_box.currentIndexChanged.connect(self.SLOT_pid_box)
 
     
         if rosgraph.is_master_online():
@@ -60,14 +70,21 @@ class Control_Gui(QtWidgets.QMainWindow):
             self.ros_worker.cam0_data.connect(self.update_cam0_data_label)
             self.ros_worker.cam1_data.connect(self.update_cam1_data_label)
             self.ros_worker.time_signal.connect(self.update_time_label)
+            self.ros_worker.pid_input_signal.connect(self.update_pid_inputs)
 
             self.ros_worker.start()
 
             self.send_velocity_signal.connect(self.ros_worker.send_new_speed)
             self.send_delta_signal.connect(self.ros_worker.set_new_delta)
-            self.send_delta_signal_2.connect(self.ros_worker.set_hover_pid)
+            self.send_pid_signal.connect(self.ros_worker.set_pid)
             self.send_stage_signal.connect(self.ros_worker.set_new_stage)
+            self.send_pid_index_signal.connect(self.ros_worker.set_pid_index)
             self.send_target_signal.connect(self.ros_worker.set_new_target)
+            self.send_target_angles_signal.connect(self.ros_worker.set_new_target_angles)
+            self.send_start_signal.connect(self.ros_worker.start_signal)
+            self.send_stop_signal.connect(self.ros_worker.stop_signal)
+
+            self.ros_worker.set_pid_index(0)
 
         else:
             rospy.logwarn("ROS master not running. Skipping ROS worker initialization.")
@@ -81,10 +98,8 @@ class Control_Gui(QtWidgets.QMainWindow):
     def update_center_label(self,data):
         self.center_label.setText(f"X: {data[0]}, Y: {data[1]}")
         self.delta_label.setText(f"DX: {data[2]}, DY: {data[3]}")
-        pitch_deg = -0.356 * data[3]
-        roll_deg = -0.356 * data[2]
-        self.pitch_label.setText(f"Pitch: {pitch_deg:.2f}°")
-        self.roll_label.setText(f"Roll: {roll_deg:.2f}°")
+        self.pitch_label.setText(f"Pitch: {data[4]:.2f}°")
+        self.roll_label.setText(f"Roll: {data[5]:.2f}°")
 
     def update_cam0_data_label(self,data):
         self.intersection_label.setText(f"Intersection: X: {data[0]}, Y: {data[1]}")
@@ -109,10 +124,25 @@ class Control_Gui(QtWidgets.QMainWindow):
         self.label_Q1.setText(f"Q1: X: {data[0]:.2f}, Y: {data[1]:.2f}, Z: {data[2]:.2f}")
         self.label_Q2.setText(f"Q2: X: {data[3]:.2f}, Y: {data[4]:.2f}, Z: {data[5]:.2f}")
         self.label_Qavg.setText(f"Qavg: X: {data[6]:.2f}, Y: {data[7]:.2f}, Z: {data[8]:.2f}")
+        self.target_pos_label.setText(f"Target Pos: X: {data[9]:.2f}, Y: {data[10]:.2f}, Z: {data[11]:.2f}")
+        self.target_tilt_label_2.setText(f"Delta(Scaled): X: {data[12]*1000:.3f}, Y: {data[13]*1000:.3f}")
+        self.target_tilt_label.setText(f"Target Tilt: Pitch: {data[14]:.3f}, Roll: {data[15]:.3f}")
+        if data[16] is not None:
+            pal = QPalette()
+            if data[16]:
+                pal.setColor(QPalette.Window, Qt.green)
+            else:
+                pal.setColor(QPalette.Window,Qt.red)
+            self.at_height_widget.setPalette(pal)
 
     def update_time_label(self,data):
         self.frame_time_label.setText(f"Frame Time(ms): {(data[0] - data[1])*1000:.1f}")
         self.time_label.setText(f"Time: {data[0]:.2f}")
+
+    def update_pid_inputs(self,data):
+        self.hover_p_input.setValue(data[0])
+        self.hover_i_input.setValue(data[1])
+        self.hover_d_input.setValue(data[2])
 
     def SLOT_speed_button(self):
         new_speed = self.motor_speed_input.value()
@@ -120,7 +150,7 @@ class Control_Gui(QtWidgets.QMainWindow):
         velocities = [new_speed, -new_speed-back_delta, new_speed+back_delta, -new_speed]
         self.send_velocity_signal.emit(velocities)
     
-    def SLOT_stop_button(self):
+    def SLOT_motor_stop_button(self):
         velocities = [0.0, 0.0, 0.0, 0.0]
         self.send_velocity_signal.emit(velocities)
 
@@ -128,16 +158,29 @@ class Control_Gui(QtWidgets.QMainWindow):
         delta = self.motor_delta_input.value()
         self.send_delta_signal.emit([delta])
 
-    def SLOT_delta_button_2(self):
-        self.send_delta_signal_2.emit([self.hover_p_input.value(),self.hover_i_input.value(),self.hover_d_input.value()])
-
-    def SLOT_stage_box(self,index):
-        self.send_stage_signal.emit(index)
+    def SLOT_pid_button(self):
+        self.send_pid_signal.emit([self.hover_p_input.value(),self.hover_i_input.value(),self.hover_d_input.value()])
 
     def SLOT_set_target_button(self):
         self.send_target_signal.emit(
             [self.target_x_input.value(),self.target_y_input.value(),self.target_z_input.value()])
+
+    def SLOT_set_target_angles(self):
+        self.send_target_angles_signal.emit([self.target_pitch_input.value(),self.target_roll_input.value()])
+
+    def SLOT_start_button(self):
+        self.send_start_signal.emit(1)
+
+    def SLOT_stop_button(self):
+        self.send_stop_signal.emit(1)
     
+    def SLOT_stage_box(self,index):
+        self.send_stage_signal.emit(index)
+
+    def SLOT_pid_box(self,index):
+        self.send_pid_index_signal.emit(index)
+
+
 
 # HELPER FUNCTIONS
 
@@ -187,38 +230,55 @@ def intersectLineAndPlane(p,d,a0,axis):
     intersection = p + d * t
     return intersection.tolist()
 
+def clamp(val,low,high):
+    return max(low, min(val, high))
+
 
 
 class PIDControl:
-    def __init__(self,Kp,Ki,Kd,dt):
+    def __init__(self,Kp,Ki,Kd,dt,integral_initial=0):
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
         self.dt = dt
-        self.prev_error = 0
-        self.integral = 0
+        self.prev_error = None
+        self.integral = integral_initial
+        self.int_init = integral_initial
 
-    def compute(self,target,predicted_value):
+    def compute(self,target,predicted_value,p=False):
         error = target - predicted_value
+        if self.prev_error is None:
+            self.prev_error = error
         P = self.Kp * error
         self.integral += error * self.dt
         I = self.Ki * self.integral
         derivative = (error - self.prev_error) / self.dt
         D = self.Kd * derivative
         self.prev_error = error
-        # print(f"E: {error}, P: {P}, I: {I}, D: {D}, int: {self.integral}")
+        if p:
+            print(f"E: {error}, P: {P}, I: {I}, D: {D}, int: {self.integral}")
         return P + I + D
     
     def setParams(self,params):
         self.Kp, self.Ki, self.Kd = params
 
+    def getParams(self):
+        return [self.Kp,self.Ki,self.Kd]
+
+    def reset(self):
+        self.integral = self.int_init
+        self.prev_error = None
+
 
 # IMAGE PROCESSING STAGES
 STAGE_ORIGINAL = 0
-STAGE_MASK = 1
-STAGE_EDGES = 2
-STAGE_LINES = 3
-STAGE_ADJUSTED = 4
+STAGE_MASK1 = 1
+STAGE_MASK2 = 2
+STAGE_MASK3 = 3
+STAGE_MASK = 4
+STAGE_EDGES = 5
+STAGE_LINES = 6
+STAGE_ADJUSTED = 7
 
 
 
@@ -230,9 +290,12 @@ class ROSWorker(QtCore.QThread):
 
     # MISC VARIABLES
     current_stage = STAGE_ADJUSTED
+    pid_index = 0
     update_rate_hz = 20
     update_period = 1.0 / update_rate_hz
     time_signal = QtCore.pyqtSignal(list)
+    pid_input_signal = QtCore.pyqtSignal(list)
+    running = False
 
 
     # CLUE DETECTION VARIABLES
@@ -248,7 +311,7 @@ class ROSWorker(QtCore.QThread):
     top_cam_img_signal = QtCore.pyqtSignal(QtGui.QImage)
     top_cam_data_signal = QtCore.pyqtSignal(list)
 
-    center_target = [64,64]
+    center_target = [128,131]
     center_delta = [0,0]
 
     pixel_delta = 0
@@ -286,57 +349,87 @@ class ROSWorker(QtCore.QThread):
     # for each camera:
     # pitch_mult,roll_mult,x_mult,y_mult, pitch_rotate
     # used to change sign of or ignore certain features for certain cameras
-    cam_adjustments = ((2,-2,1,1,False),(-2,2,-1,-1,False),(-2,2,-1,-1,True),(2,2,1,1,True))
+    cam_adjustments = ((1,-1,1,1,False),(-1,1,-1,-1,False),(-1,1,-1,-1,True),(1,1,1,1,True))
 
     # how much to scale the camera feeds by
     cam_scale = 0.5
 
+    tilt_mult = 0.5
+
+    tilt_add = 0.001
+
 
     # MOVEMENT VARIABLES
 
-    target_pos = [5.5,0,0.2]
+    # target_pos = [5.5,0.5,0.2]
+
+    target_pitch = 0
+    target_roll = 0
 
     predicted_pos = None
 
-    moving_y_axis = True # y axis is default foward direction
+    # moving_axis = 1 # y axis is default foward direction
 
     # all motors at this speed keeps the drone at constant height if there is no initial momentum
     hover_speed = 70.689
 
-    hover_p = 0.1
-    hover_i = 0.002
-    hover_d = 0.4
-    hover_integral = 0
+    # hoverPID = PIDControl(0.1,0.002,0.4,update_period)
+    hoverPID = PIDControl(0.1,0,0.4,update_period)
+    # tiltPID = PIDControl(0.002,0,0.002,update_period)
+    # tilt_p,tilt_i,tilt_d = 0.0025, 0, 0.002
+    tilt_p,tilt_i,tilt_d = 0.0008, 0, 0.0008
+    # tilt_p,tilt_i,tilt_d = tilt_mult, tilt_add, 0.002
+    pitchPID = PIDControl(tilt_p,tilt_i,tilt_d,update_period)
+    rollPID = PIDControl(tilt_p,tilt_i,tilt_d,update_period)
+    # movePID = PIDControl(0,0,0,update_period)
+    # move_p,move_i,move_d = 0.95,0,1.2
+    move_p,move_i,move_d = 0.00125,0.00001,0.0049
+    xPID = PIDControl(move_p,move_i,move_d,update_period)
+    yPID = PIDControl(move_p,move_i,move_d,update_period)
 
-    hoverPID = PIDControl(0.1,0.002,0.4,update_period)
-    movePID = PIDControl(0,0,0,update_period)
-    tiltPID = PIDControl(0,0,0,update_period)
+    # pos_deadzone = 0.05 # set PID output to 0 if this close to target
 
 
+    # current_assumption = 5.5
+    using_assumption = False
 
-
+    just_switched_mode = False
 
     prev_pos = None
 
     # how close the height should be to the target height before moving
-    height_delta = 0.05
+    # height_delta = 0.1
+    height_delta = 100 # disabled
+
+    # for display
+    del_x = 0
+    del_y = 0
+
+
+
+    # ROUTING VARIABLES
+
+    # start at 5.5, 2.5, 0.125
+    waypoints = [
+        # (x,y,z), movement axis, assumption
+        ((5.5,0.5,0.2),1,5.5),
+        ((5.5,0.5,0.5),1,5.5),
+    ]
     
+    current_waypoint_index = 0
 
+    # how close each axis needs to be to be considered at the waypoint
+    waypoint_distance = 0.1
 
+    # how many frames the drone needs to be near the waypoint before moving to the next
+    waypoint_time = 0
 
-    
+    waypoint_counter = 0
 
 
     def __init__(self):
         super().__init__()
         self.bridge = CvBridge()
-        self.clock_sub = rospy.Subscriber('/clock',Clock,self.clock_callback)
-        self.cam_top_sub = rospy.Subscriber('/B1/camera_top/image_raw', Image, self.top_cam_callback)
-        self.cam0_sub = rospy.Subscriber('/B1/camera0/image_raw', Image, partial(self.cam_callback_generic,cam=0))
-        self.cam1_sub = rospy.Subscriber('/B1/camera1/image_raw', Image, partial(self.cam_callback_generic,cam=1))
-        self.cam2_sub = rospy.Subscriber('/B1/camera2/image_raw', Image, partial(self.cam_callback_generic,cam=2))
-        self.cam3_sub = rospy.Subscriber('/B1/camera3/image_raw', Image, partial(self.cam_callback_generic,cam=3))
-        self.speed_pub = rospy.Publisher('/motor_speed_cmd', MotorSpeed, queue_size=1)
         self.speeds = [0.0,0.0,0.0,0.0]
         self.cam_img_signals = (self.cam0_signal,self.cam1_signal,self.cam2_signal,self.cam3_signal)
         self.cam_data_signals = (self.cam0_data,self.cam1_data,self.cam2_data,self.cam3_data)
@@ -344,26 +437,35 @@ class ROSWorker(QtCore.QThread):
         self.current_time = 0
         self.prev_update_time = 0
 
+        self.set_waypoint()
 
-    di=0
+        self.clock_sub = rospy.Subscriber('/clock',Clock,self.clock_callback)
+        self.cam_top_sub = rospy.Subscriber('/B1/camera_top/image_raw', Image, self.top_cam_callback)
+        self.cam0_sub = rospy.Subscriber('/B1/camera0/image_raw', Image, partial(self.cam_callback_generic,cam=0))
+        self.cam1_sub = rospy.Subscriber('/B1/camera1/image_raw', Image, partial(self.cam_callback_generic,cam=1))
+        self.cam2_sub = rospy.Subscriber('/B1/camera2/image_raw', Image, partial(self.cam_callback_generic,cam=2))
+        self.cam3_sub = rospy.Subscriber('/B1/camera3/image_raw', Image, partial(self.cam_callback_generic,cam=3))
+        self.speed_pub = rospy.Publisher('/motor_speed_cmd', MotorSpeed, queue_size=1)
+
+
+
 
     def clock_callback(self,data):
         self.current_time = (data.clock.nsecs / 1000000000.0) + data.clock.secs
 
         # print(f"clock: {self.di}, {self.current_time}, {data.clock.secs}, {(data.clock.nsecs / 1000000000.0)}, {data.clock.nsecs}")
-        self.di += 1
 
         if self.current_time - self.prev_update_time > self.update_period:
             self.time_signal.emit([self.current_time,self.prev_update_time])
             self.prev_update_time = self.current_time
-            self.update()
+            if self.running:
+                self.update()
 
 
 
     def update(self):
         self.processInputs()
-
-        names = ["propeller1", "propeller2", "propeller3", "propeller4"]
+   
 
         base_speed = self.hover_speed
         motor_delta_x = 0
@@ -371,16 +473,130 @@ class ROSWorker(QtCore.QThread):
 
         if self.predicted_pos is not None and self.prev_pos is not None:
 
+            all_close = True
+            for a, b in zip(self.predicted_pos, self.target_pos):
+                if abs(a - b) > self.waypoint_distance:
+                    all_close = False
 
-            base_speed += self.hoverPID.compute(self.target_pos[2],self.predicted_pos[2])
+            if all_close and self.current_waypoint_index != len(self.waypoints):
+                
+                self.waypoint_counter += 1
 
-            # if self.moving_y_axis:
-            #     motor_delta_y = self.movePID.compute(self.target_pos[1],self.predicted_pos[1])
+                if self.waypoint_counter > self.waypoint_time:
+                    self.waypoint_counter = 0
+                    print(f"Reached waypoint {self.current_waypoint_index}")
+                    self.current_waypoint_index += 1
+                    if self.current_waypoint_index < len(self.waypoints):
+                        self.set_waypoint()
 
 
-        self.prev_pos = None if self.predicted_pos is None else self.predicted_pos
+            hover_amount = self.hoverPID.compute(self.target_pos[2],self.predicted_pos[2])
+
+            # stronger stabilization power if above the target height
+            if self.predicted_pos[2] > self.target_pos[2]:
+                hover_amount *= 1.5
+
+            base_speed += hover_amount
+
+            # if self.moving_axis == 0:
+            #     dx = self.target_pos[0] - self.predicted_pos[0]
+            #     self.target_pitch = clamp(-0.5 * dx,-0.5,0.5)
+            # elif self.moving_axis == 1:
+            #     dy = self.target_pos[1] - self.predicted_pos[1]
+            #     self.target_pitch = clamp(-0.5 * dy,-0.5,0.5)
+            #     # print(f"tp: {self.target_pitch}")
+
+            # self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.5,0.5)
+            # self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-0.5,0.5)
+
+            at_height = np.abs(self.predicted_pos[2] - self.target_pos[2]) < self.height_delta
+
+            self.target_pitch = 0
+            self.target_roll = 0
+
+            # if at_height:
+
+                # if self.moving_axis == 0:
+                #     self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.5,0.5)
+                #     if not self.using_assumption:
+                #         self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-0.25,0.25)
+                # elif self.moving_axis == 1:
+                #     self.target_pitch = clamp(-self.yPID.compute(self.target_pos[1],self.predicted_pos[1]),-50,50) # TEMP, should be 0.5
+                #     if not self.using_assumption:
+                #         self.target_roll = clamp(-self.xPID.compute(self.target_pos[0],self.predicted_pos[0]),-0.25,0.25)
+                        # self.target_roll = clamp(self.predicted_pos[0]-self.target_pos[0],-0.25,0.25)
+
+            # if np.abs(self.target_pos[0] - self.predicted_pos[0]) < self.pos_deadzone:
+            #     self.target_roll = 0
+            #     print("X")
+            # if np.abs(self.target_pos[1] - self.predicted_pos[1]) < self.pos_deadzone:
+            #     self.target_pitch = 0
+            #     print("Y")
+
+
+            # if self.moving_axis == 0:
+            #     motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
+            #     if not self.using_assumption:
+            #         motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+            # elif self.moving_axis == 1:
+            #     motor_delta_y =  -self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+            #     if not self.using_assumption:
+            #         motor_delta_x = -self.rollPID.compute(self.target_roll,self.roll_deg)
+
+
+            # motor_delta_x = -self.rollPID.compute(target_r,self.roll_deg)
+            # motor_delta_y =  -self.pitchPID.compute(target_p,self.pitch_deg)
+
+            motor_delta_x = self.xPID.compute(self.target_pos[0],self.predicted_pos[0])
+            motor_delta_y = self.yPID.compute(self.target_pos[1],self.predicted_pos[1])
+            # print(f"Y: Target: {self.target_pos[1]}, Pred: {self.predicted_pos[1]}, DY: {self.target_pos[1]-self.predicted_pos[1]}")
+
+            self.del_x = motor_delta_x
+            self.del_y = motor_delta_y
+
+            # if self.pitch_deg > 0.5:
+            #     motor_delta_y = 0
+
+            # if self.roll_deg > 0.5:
+            #     motor_delta_x = 0
+            
+            motor_delta_x /= (1+np.abs(self.roll_deg*self.tilt_mult))
+            motor_delta_y /= (1+np.abs(self.pitch_deg*self.tilt_mult))
+            
+            dx = self.target_pos[0] - self.predicted_pos[0]
+            dy = self.target_pos[1] - self.predicted_pos[1]
+
+            t1 = 1
+            t2 = 0.25
+
+            if self.moving_axis == 0:
+                self.target_roll = clamp(-0.5 * dx,-t1,t1)
+                self.target_pitch = clamp(-0.5 * dy,-t2,t2)
+            elif self.moving_axis == 1:
+                self.target_pitch = clamp(-0.5 * dy,-t1,t1)
+                self.target_roll = clamp(-0.5 * dx,-t2,t2)
+
+            motor_delta_x -= np.abs(self.roll_deg) * self.rollPID.compute(self.target_roll,self.roll_deg)
+            motor_delta_y -= np.abs(self.pitch_deg) * self.pitchPID.compute(self.target_pitch,self.pitch_deg)
+            
+
+
+
+        base_speed /= np.cos(np.deg2rad(self.roll_deg))
+        base_speed /= np.cos(np.deg2rad(self.pitch_deg))
+
+
+        # if self.speeds[0] == 0.0:
+        #     motor_delta_x = 0
+        #     motor_delta_y = 0
+
+        # print(f"delx: {motor_delta_x}, dely: {motor_delta_y}")
+
+
+
 
         # adjusted_vel = [self.speeds[0] + motor_delta_x, self.speeds[1], self.speeds[2], self.speeds[3] - motor_delta_x]
+        self.prev_pos = None if self.predicted_pos is None else self.predicted_pos
 
         adjusted_vel = [
             base_speed + motor_delta_y - motor_delta_x,
@@ -389,30 +605,16 @@ class ROSWorker(QtCore.QThread):
             -(base_speed + motor_delta_y + motor_delta_x)
             ]
 
-        ms = MotorSpeed(name=names, velocity=adjusted_vel)
+        self.pub_vel(adjusted_vel)
+
+
+    def pub_vel(self,velocities):
+        names = ["propeller1", "propeller2", "propeller3", "propeller4"]
+        ms = MotorSpeed(name=names, velocity=velocities)
         self.speed_pub.publish(ms)
 
-
     def run(self): 
-        # rospy.spin()
-        rate = rospy.Rate(100)  # rate in Hz
-
-        while not rospy.is_shutdown():
-
-        #     self.processInputs()
-
-        #     names = ["propeller1", "propeller2", "propeller3", "propeller4"]
-
-        #     motor_delta = self.pixel_delta * self.center_delta[1]
-
-        #     # rospy.loginfo(f"Motor Delta: {motor_delta}")
-
-        #     adjusted_vel = [self.speeds[0] + motor_delta, self.speeds[1], self.speeds[2], self.speeds[3] - motor_delta]
-
-        #     ms = MotorSpeed(name=names, velocity=adjusted_vel)
-        #     self.speed_pub.publish(ms)
-        #     # rospy.loginfo(f"PUBLISHING SPEED {self.speeds}")
-            rate.sleep()
+        rospy.spin()
 
     # process data aggregated from cameras
     def processInputs(self):
@@ -424,9 +626,12 @@ class ROSWorker(QtCore.QThread):
         l1_exists = not all(i==0 for i in d1)
         l2_exists = not all(i==0 for i in d2)
 
-        assumption_value = 5.5
+        assumption_value = self.current_assumption
         assumption_axis = 0
 
+        previously_using_assumption = self.using_assumption
+
+        self.using_assumption = False
 
         data = []
         if l1_exists and l2_exists:
@@ -439,11 +644,13 @@ class ROSWorker(QtCore.QThread):
                 data.extend(Qavg)
                 
         elif l1_exists:
+            self.using_assumption = True
             intersection = intersectLineAndPlane(p1,d1,assumption_value,assumption_axis)
             self.predicted_pos = intersection
             data = [0,0,0,0,0,0]
             data.extend(intersection)
         elif l2_exists:
+            self.using_assumption = True
             intersection = intersectLineAndPlane(p2,d2,assumption_value,assumption_axis)
             self.predicted_pos = intersection
             data = [0,0,0,0,0,0]
@@ -452,6 +659,20 @@ class ROSWorker(QtCore.QThread):
             self.predicted_pos = None
             data = [0,0,0,0,0,0,0,0,0]
 
+        if previously_using_assumption != self.using_assumption:
+            # self.just_switched_mode = True
+            self.xPID.reset()
+            self.yPID.reset()
+            # print(f"Switching Mode: Using Assumption {self.using_assumption}")
+
+        data.extend(self.target_pos)
+        data.extend([self.del_x,self.del_y,self.target_pitch,self.target_roll])
+
+        if self.predicted_pos is not None:
+            at_height = np.abs(self.predicted_pos[2] - self.target_pos[2]) < self.height_delta
+            data.append(at_height)
+        else:
+            data.append(None)
 
         self.processing_data_signal.emit(data)
 
@@ -472,12 +693,30 @@ class ROSWorker(QtCore.QThread):
         return img # return processed image
 
 
-
     def detect_corner(self,img,adjustments):
 
         pitch_mult,roll_mult,x_mult,y_mult,pitch_rotate = adjustments
 
         cv_image = img.copy()
+
+        # first pass
+
+        lowerH = 0
+        upperH = 255
+        lowerS = 0
+        upperS = 255
+        lowerV = 150
+        upperV = 255
+
+        lower_hsv = np.array([lowerH,lowerS,lowerV])
+        upper_hsv = np.array([upperH,upperS,upperV])
+
+        hsv = cv.cvtColor(cv_image, cv.COLOR_RGB2HSV)
+
+        mask1 = cv.bitwise_not(cv.inRange(hsv, lower_hsv, upper_hsv))
+        # mask1 = cv.inRange(hsv, lower_hsv, upper_hsv)
+
+        # second pass
 
         lowerH = 100
         upperH = 255
@@ -491,7 +730,26 @@ class ROSWorker(QtCore.QThread):
 
         hsv = cv.cvtColor(cv_image, cv.COLOR_RGB2HSV)
 
-        mask = cv.inRange(hsv, lower_hsv, upper_hsv)
+        mask2 = cv.inRange(hsv, lower_hsv, upper_hsv)
+
+        # filter pixels above mask1
+
+        mask3 = np.zeros_like(mask1, dtype=np.uint8)
+
+        for col in range(mask1.shape[1]):
+            # Find the row of the first non-zero pixel (lowest allowed pixel in this column)
+            rows = np.where(mask1[:, col] > 0)[0]
+            if rows.size > 0:
+                # Get the lowest allowed pixel index
+                lowest_pixel_row = rows[0]
+                # Set all pixels strictly below this lowest pixel in the mask
+                mask3[lowest_pixel_row + 1:, col] = 255
+
+
+
+        mask = cv.bitwise_and(cv.bitwise_not(mask2),mask3)
+        # mask = mask1
+
         edges = cv.Canny(mask,100,200)
 
         lines = cv.HoughLinesP(edges,1,np.pi/180,int(100*self.cam_scale),minLineLength=int(100*self.cam_scale),maxLineGap=int(100*self.cam_scale))
@@ -638,6 +896,12 @@ class ROSWorker(QtCore.QThread):
             img_final = cv_image
         elif self.current_stage == STAGE_ADJUSTED:
             img_final = adjusted
+        elif self.current_stage == STAGE_MASK1:
+            img_final = cv.cvtColor(mask1,cv.COLOR_GRAY2RGB)
+        elif self.current_stage == STAGE_MASK2:
+            img_final = cv.cvtColor(mask2,cv.COLOR_GRAY2RGB)
+        elif self.current_stage == STAGE_MASK3:
+            img_final = cv.cvtColor(mask3,cv.COLOR_GRAY2RGB)
         else:
             img_final = img
 
@@ -695,7 +959,8 @@ class ROSWorker(QtCore.QThread):
 
             mask = cv.inRange(hsv, lower_hsv, upper_hsv)
 
-            w = 128
+            w = 256
+            fov = 20
 
             col_avg = 0
             col_num = 0
@@ -723,17 +988,24 @@ class ROSWorker(QtCore.QThread):
             row_max = int(row_max / max(row_max_num,1))
             mask_rgb = cv.cvtColor(mask,cv.COLOR_GRAY2RGB)
 
-            if row_max != 0 or col_max != 0:
-                cv.circle(mask_rgb,(row_max,col_max),10,(255,0,0),2)
             cv.circle(mask_rgb,self.center_target,1,(255,0,255),2)
+            
+            
+            if row_max != 0 or col_max != 0:
+                cv.circle(mask_rgb,(row_max,col_max),35,(255,0,0),4)
 
-            self.center_delta = [row_max - self.center_target[0],col_max - self.center_target[1]]
+                self.center_delta = [row_max - self.center_target[0],col_max - self.center_target[1]]
 
-            self.top_cam_data_signal.emit([row_max,col_max,self.center_delta[0],self.center_delta[1]])
+                self.pitch_deg = -self.center_delta[1] * fov / w
+                self.roll_deg = -self.center_delta[0] * fov / w
+
             # print(f"Center: {col_max}, {row_max}")
 
-            self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
-            self.roll_deg = -0.356 * self.center_delta[0]
+            # self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
+            # self.roll_deg = -0.356 * self.center_delta[0]
+
+
+            self.top_cam_data_signal.emit([row_max,col_max,self.center_delta[0],self.center_delta[1],self.pitch_deg,self.roll_deg])
 
             img_final = mask_rgb
             
@@ -747,18 +1019,70 @@ class ROSWorker(QtCore.QThread):
 
     def send_new_speed(self, data):
         self.speeds = data
+        if data[0] == 0.0:
+            self.pitchPID.reset()
+            self.rollPID.reset()
+            self.hoverPID.reset()
 
     def set_new_delta(self,data):
         self.pixel_delta = data[0]
         
-    def set_hover_pid(self,data):
-        self.hover_p, self.hover_i, self.hover_d = data
+    def set_pid(self,data):
+        index = self.pid_index
+        if index == 0:
+            self.hoverPID.setParams(data)
+        elif index == 1:
+            self.pitchPID.setParams(data)
+            self.rollPID.setParams(data)
+            # self.tilt_mult = data[0]
+            # self.tilt_add = data[1]
+        elif index == 2:
+            self.xPID.setParams(data)
+            self.yPID.setParams(data)
+
+    def set_pid_index(self,index):
+        self.pid_index = index
+        if index == 0:
+            self.pid_input_signal.emit(self.hoverPID.getParams())
+        elif index == 1:
+            self.pid_input_signal.emit(self.pitchPID.getParams())
+        elif index == 2:
+            self.pid_input_signal.emit(self.xPID.getParams())
+
 
     def set_new_stage(self,data):
         self.current_stage = data
 
     def set_new_target(self,data):
         self.target_pos = data
+
+    def set_new_target_angles(self,data):
+        self.target_pitch, self.target_roll = data
+
+    def start_signal(self,data):
+        if data != 0 and not self.running:
+            self.running = True
+            # print("Starting")
+
+    def stop_signal(self,data):
+        if data != 0:
+            # print("Stopping")
+            self.reset_PID()
+            self.pub_vel([0,0,0,0])
+            self.current_waypoint_index = 0
+            self.set_waypoint()
+            self.running = False
+
+    def reset_PID(self):
+        self.pitchPID.reset()
+        self.rollPID.reset()
+        self.hoverPID.reset()
+        self.xPID.reset()
+        self.yPID.reset()
+
+    def set_waypoint(self):
+        self.target_pos, self.moving_axis, self.current_assumption = self.waypoints[self.current_waypoint_index]
+
 
 
 

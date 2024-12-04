@@ -70,3 +70,16 @@ with all cams and adjusted mass, power 70.8 is enough to lift
 
 height:
 P=0.1, I = 0.002, D=0.4
+
+
+-x 5.5 -y 2.5 -z 0.12505 -R 0.0 -P 0.0 -Y -1.57079632679
+
+rosservice call /gazebo/set_model_state "model_state:
+  model_name: 'B1'
+  pose:
+    position: {x: 5.5, y: 2.5, z: 0.12505}
+    orientation: {x: 0.0, y: 0.0, z: -0.70710678118, w: 0.70710678118}
+  twist:
+    linear: {x: 0.0, y: 0.0, z: 0.0}
+    angular: {x: 0.0, y: 0.0, z: 0.0}
+  reference_frame: 'world'"

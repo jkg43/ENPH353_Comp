@@ -57,7 +57,7 @@ class Control_Gui(QtWidgets.QMainWindow):
     # TOP CAMERA VARIABLES
 
 
-    center_target = [64,64]
+    center_target = [119,119]
     center_delta = [0,0]
 
     pixel_delta = 0
@@ -470,7 +470,8 @@ class Control_Gui(QtWidgets.QMainWindow):
 
             mask = cv.inRange(hsv, lower_hsv, upper_hsv)
 
-            w = 128
+            w = 256
+            fov = 30 * np.pi / 180
 
             col_avg = 0
             col_num = 0
@@ -507,8 +508,11 @@ class Control_Gui(QtWidgets.QMainWindow):
             self.update_center_label([row_max,col_max,self.center_delta[0],self.center_delta[1]])
             # print(f"Center: {col_max}, {row_max}")
 
-            self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
-            self.roll_deg = -0.356 * self.center_delta[0]
+            # self.pitch_deg = -0.356 * self.center_delta[1] # equation from spreadsheet
+            # self.roll_deg = -0.356 * self.center_delta[0]
+
+            self.pitch_deg = -self.center_delta[1] * fov / w
+            self.roll_deg = -self.center_delta[0] * fov / w
 
             img_final = mask_rgb
             

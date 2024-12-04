@@ -6,7 +6,7 @@
   <!-- drone properties -->
   <xacro:property name="frame_radius" value="0.05"/>
   <xacro:property name="frame_height" value="0.025"/>
-  <xacro:property name="frame_mass" value="0.38"/>
+  <xacro:property name="frame_mass" value="0.34"/>
   <xacro:property name="arm_radius" value="0.01"/>
   <xacro:property name="arm_length" value="0.1"/>
   <xacro:property name="arm_mass" value="0.01"/>
@@ -17,6 +17,12 @@
   <xacro:property name="propeller_height" value="0.01"/>
   <xacro:property name="propeller_height_offset" value="0.055"/>
   <xacro:property name="propeller_mass" value="0.01"/>
+  <xacro:property name="leg_angle" value="-0.78539816339"/>
+  <xacro:property name="leg_radius" value="0.01"/>
+  <xacro:property name="leg_length" value="0.05"/>
+  <xacro:property name="leg_mass" value="0.01"/>
+  <xacro:property name="leg_pos_radius" value="0.04"/>
+  <xacro:property name="leg_height_offset" value="-0.025"/>
 
 
   <!-- camera properties -->
@@ -129,6 +135,37 @@
     <color rgba="0 0 0 0.6"/>
   </material>
 
+  <!-- leg macro-->
+  <xacro:macro name="leg" params="i">
+    <link name="leg${i}">
+      <visual>
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${sin((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${frame_height/2-leg_radius+leg_height_offset}" rpy="0 ${leg_angle} ${(i-1)*pi/2+pi/4}"/>
+        <geometry>
+          <cylinder radius="${leg_radius}" length="${leg_length}"/>
+        </geometry>
+        <material name="arm_material"/>
+      </visual>
+      <collision>
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${sin((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${frame_height/2-leg_radius+leg_height_offset}" rpy="0 ${leg_angle} ${(i-1)*pi/2+pi/4}"/>
+        <geometry>
+          <cylinder radius="${leg_radius}" length="${leg_length}"/>
+        </geometry>
+      </collision>
+      <xacro:cylinder_inertial radius="${leg_radius}" height="${leg_length}" mass="${leg_mass}">
+        <origin xyz="${cos((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${sin((i-1)*pi/2+pi/4)*(leg_pos_radius+leg_length/2)} ${frame_height/2-leg_radius+leg_height_offset}" rpy="0 ${leg_angle} ${(i-1)*pi/2+pi/4}"/>
+      </xacro:cylinder_inertial>
+    </link>
+   
+    <joint name="frame_leg${i}" type="fixed">
+      <parent link="frame"/>
+      <child link="leg${i}"/>
+    </joint>
+   
+    <gazebo reference="leg${i}">
+      <material>Gazebo/Grey</material>
+    </gazebo>
+  </xacro:macro>
+
   <!-- frame link -->
   <link name="frame">
     <visual>
@@ -156,7 +193,7 @@
   </gazebo>
 
   <!-- camera macro -->
-  <xacro:macro name="camera" params="i x y z r p yw w h">
+  <xacro:macro name="camera" params="i x y z r p yw w h fov">
     <link name='camera${i}_link'>
       <xacro:box_inertial name="camera${i}_link" m="${camera_mass}" x="${camera_width}" y="${camera_length}" z="${camera_height}"/>
       <collision name='camera${i}_link_collision'>
@@ -182,7 +219,7 @@
       <sensor type="camera" name="camera${i}">
         <update_rate>30.0</update_rate>
         <camera name="head">
-          <horizontal_fov>1.57079632679</horizontal_fov>
+          <horizontal_fov>${fov * pi / 180}</horizontal_fov>
           <image>
             <width>${w}</width>
             <height>${h}</height>
@@ -221,11 +258,16 @@
     </gazebo>
   </xacro:macro>
 
-<!-- defining 4 arms and propellors -->
+<!-- defining 4 arms, legs and propellors -->
 <xacro:arm i="1"/>
 <xacro:arm i="2"/>
 <xacro:arm i="3"/>
 <xacro:arm i="4"/>
+
+<xacro:leg i="1"/>
+<xacro:leg i="2"/>
+<xacro:leg i="3"/>
+<xacro:leg i="4"/>
 
 <xacro:propeller i="1" mat="Gazebo/RedTransparent"/>
 <xacro:propeller i="2" mat="Gazebo/RedTransparent"/>
@@ -234,11 +276,11 @@
 
 
 <!-- defining cameras -->
-<xacro:camera i="0" x="${frame_radius}" y="0" z="0" r="0" p="0" yw="0" w="800" h="400"/>
-<xacro:camera i="1" x="${-frame_radius}" y="0" z="0" r="0" p="0" yw="${pi}" w="800" h="400"/>
-<xacro:camera i="2" x="0" y="${frame_radius}" z="0" r="0" p="0" yw="${pi/2}" w="800" h="400"/>
-<xacro:camera i="3" x="0" y="${-frame_radius}" z="0" r="0" p="0" yw="${-pi/2}" w="800" h="400"/>
-<xacro:camera i="_top" x="0" y="0" z="${frame_height/2}" r="0" p="-1.8" yw="0" w="128" h="128"/>
+<xacro:camera i="0" x="${frame_radius}" y="0" z="0" r="0" p="0" yw="0" w="800" h="400" fov = "90"/>
+<xacro:camera i="1" x="${-frame_radius}" y="0" z="0" r="0" p="0" yw="${pi}" w="800" h="400" fov = "90"/>
+<xacro:camera i="2" x="0" y="${frame_radius}" z="0" r="0" p="0" yw="${pi/2}" w="800" h="400" fov = "90"/>
+<xacro:camera i="3" x="0" y="${-frame_radius}" z="0" r="0" p="0" yw="${-pi/2}" w="800" h="400" fov = "90"/>
+<xacro:camera i="_top" x="0" y="0" z="${frame_height/2}" r="0" p="-1.8" yw="0" w="256" h="256" fov = "20"/>
 
 
 
