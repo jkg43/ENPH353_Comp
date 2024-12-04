@@ -12,6 +12,8 @@ from tensorflow.keras.models import load_model
 from std_msgs.msg import String
 
 
+
+
 model = None
 sess = None
 graph = None
@@ -247,8 +249,9 @@ def order_points(pts):
 
 def main():
     rospy.init_node('homography_node', anonymous=True)
+    print("Loaded")
     load_nn_model(os.path.expanduser('~/ros_ws/nn/model_biggest.keras'))
-    rospy.Subscriber('/B1/camera1/image_raw', Image, image_callback)
+    rospy.Subscriber('/B1/camera0/image_raw', Image, image_callback)
 
     rospy.spin()
 
