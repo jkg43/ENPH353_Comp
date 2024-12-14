@@ -12,6 +12,6 @@
   <!-- <include file="$(find drone_controller)/launch/drone_controller.launch"/> -->
   <include file="$(find drone_controller)/launch/drone_gui.launch"/>
 
-  <include file="$(find homography)/launch/homography.launch"/>
+  <!-- <include file="$(find homography)/launch/homography.launch"/> -->
 
 </launch>
